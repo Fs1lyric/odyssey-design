@@ -1,5 +1,7 @@
 # Odyssey Design
 
+[![CI](https://github.com/lyric/odyssey-design/actions/workflows/ci.yml/badge.svg)](https://github.com/lyric/odyssey-design/actions/workflows/ci.yml)
+
 A local-first desktop app for documents, spreadsheets, decks and video.
 Everything is stored on your machine in SQLite. There is no account, no server
 and no sync.
@@ -186,6 +188,13 @@ fetched at runtime and there is no silent-fallback risk.
 - Formula evaluation runs only in the desktop app. In a browser, the dev store
   shows raw cell text — there is deliberately no second engine to keep in sync.
 
+## Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) covers the engine design and the
+  constraints that shaped it.
+- [ROADMAP.md](ROADMAP.md) is the honest gap list.
+- [CONTRIBUTING.md](CONTRIBUTING.md) covers setup and conventions.
+
 ## Licence
 
-MIT.
+MIT. See [LICENSE](LICENSE).

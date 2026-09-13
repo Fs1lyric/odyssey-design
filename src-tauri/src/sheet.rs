@@ -92,7 +92,10 @@ impl Addr {
         if row == 0 {
             return None;
         }
-        Some(Addr { col: col - 1, row: row - 1 })
+        Some(Addr {
+            col: col - 1,
+            row: row - 1,
+        })
     }
 
     pub fn to_a1(self) -> String {
@@ -119,7 +122,8 @@ impl Sheet {
         if raw.is_empty() {
             self.cells.remove(&addr.to_ascii_uppercase());
         } else {
-            self.cells.insert(addr.to_ascii_uppercase(), raw.to_string());
+            self.cells
+                .insert(addr.to_ascii_uppercase(), raw.to_string());
         }
     }
 
@@ -315,15 +319,21 @@ impl Sheet {
             "MIN" => nums
                 .iter()
                 .copied()
-                .fold(None, |acc: Option<f64>, n| Some(acc.map_or(n, |a| a.min(n))))
+                .fold(None, |acc: Option<f64>, n| {
+                    Some(acc.map_or(n, |a| a.min(n)))
+                })
                 .map_or(Value::Number(0.0), Value::Number),
             "MAX" => nums
                 .iter()
                 .copied()
-                .fold(None, |acc: Option<f64>, n| Some(acc.map_or(n, |a| a.max(n))))
+                .fold(None, |acc: Option<f64>, n| {
+                    Some(acc.map_or(n, |a| a.max(n)))
+                })
                 .map_or(Value::Number(0.0), Value::Number),
             "COUNT" => Value::Number(nums.len() as f64),
-            "COUNTA" => Value::Number(vals.iter().filter(|v| !matches!(v, Value::Empty)).count() as f64),
+            "COUNTA" => {
+                Value::Number(vals.iter().filter(|v| !matches!(v, Value::Empty)).count() as f64)
+            }
             "ROUND" => {
                 if nums.len() != 2 {
                     return Value::Error("#N/ARGS!".into());
@@ -343,9 +353,18 @@ impl Sheet {
             }
             "FLOOR" => one(&nums, f64::floor),
             "CEILING" | "CEIL" => one(&nums, f64::ceil),
-            "LEN" => Value::Number(vals.first().map_or(0.0, |v| v.display().chars().count() as f64)),
-            "UPPER" => Value::Text(vals.first().map_or(String::new(), |v| v.display().to_uppercase())),
-            "LOWER" => Value::Text(vals.first().map_or(String::new(), |v| v.display().to_lowercase())),
+            "LEN" => Value::Number(
+                vals.first()
+                    .map_or(0.0, |v| v.display().chars().count() as f64),
+            ),
+            "UPPER" => Value::Text(
+                vals.first()
+                    .map_or(String::new(), |v| v.display().to_uppercase()),
+            ),
+            "LOWER" => Value::Text(
+                vals.first()
+                    .map_or(String::new(), |v| v.display().to_lowercase()),
+            ),
             "CONCAT" | "CONCATENATE" => {
                 Value::Text(vals.iter().map(Value::display).collect::<String>())
             }
@@ -387,8 +406,18 @@ fn cells_in(a: Addr, b: Addr) -> Vec<Addr> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Op {
-    Add, Sub, Mul, Div, Pow, Concat,
-    Eq, Ne, Lt, Le, Gt, Ge,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Pow,
+    Concat,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 #[derive(Debug, Clone)]
@@ -410,7 +439,11 @@ struct Parser {
 
 impl Parser {
     fn new(s: &str) -> Parser {
-        Parser { src: s.chars().collect(), pos: 0, depth: 0 }
+        Parser {
+            src: s.chars().collect(),
+            pos: 0,
+            depth: 0,
+        }
     }
 
     fn at_end(&mut self) -> bool {
@@ -454,12 +487,30 @@ impl Parser {
         loop {
             self.skip_ws();
             let op = match (self.src.get(self.pos), self.src.get(self.pos + 1)) {
-                (Some('<'), Some('>')) => { self.pos += 2; Op::Ne }
-                (Some('<'), Some('=')) => { self.pos += 2; Op::Le }
-                (Some('>'), Some('=')) => { self.pos += 2; Op::Ge }
-                (Some('<'), _) => { self.pos += 1; Op::Lt }
-                (Some('>'), _) => { self.pos += 1; Op::Gt }
-                (Some('='), _) => { self.pos += 1; Op::Eq }
+                (Some('<'), Some('>')) => {
+                    self.pos += 2;
+                    Op::Ne
+                }
+                (Some('<'), Some('=')) => {
+                    self.pos += 2;
+                    Op::Le
+                }
+                (Some('>'), Some('=')) => {
+                    self.pos += 2;
+                    Op::Ge
+                }
+                (Some('<'), _) => {
+                    self.pos += 1;
+                    Op::Lt
+                }
+                (Some('>'), _) => {
+                    self.pos += 1;
+                    Op::Gt
+                }
+                (Some('='), _) => {
+                    self.pos += 1;
+                    Op::Eq
+                }
                 _ => break,
             };
             let right = self.parse_sum()?;
@@ -501,8 +552,14 @@ impl Parser {
 
     fn parse_unary(&mut self) -> Result<Node, String> {
         match self.peek() {
-            Some('-') => { self.pos += 1; Ok(Node::Unary('-', Box::new(self.parse_unary()?))) }
-            Some('+') => { self.pos += 1; self.parse_unary() }
+            Some('-') => {
+                self.pos += 1;
+                Ok(Node::Unary('-', Box::new(self.parse_unary()?)))
+            }
+            Some('+') => {
+                self.pos += 1;
+                self.parse_unary()
+            }
             _ => self.parse_power(),
         }
     }
@@ -557,7 +614,10 @@ impl Parser {
                 }
             }
             let text: String = self.src[start..self.pos].iter().collect();
-            return text.parse::<f64>().map(Node::Number).map_err(|_| "#NUM!".to_string());
+            return text
+                .parse::<f64>()
+                .map(Node::Number)
+                .map_err(|_| "#NUM!".to_string());
         }
 
         if c.is_ascii_alphabetic() || c == '$' || c == '_' {
@@ -651,8 +711,13 @@ mod tests {
     #[test]
     fn sums_a_range() {
         let s = sheet(&[
-            ("A1", "1"), ("A2", "2"), ("A3", "3"), ("A4", "4"),
-            ("B1", "=SUM(A1:A4)"), ("B2", "=AVERAGE(A1:A4)"), ("B3", "=COUNT(A1:A4)"),
+            ("A1", "1"),
+            ("A2", "2"),
+            ("A3", "3"),
+            ("A4", "4"),
+            ("B1", "=SUM(A1:A4)"),
+            ("B2", "=AVERAGE(A1:A4)"),
+            ("B3", "=COUNT(A1:A4)"),
         ]);
         assert_eq!(val(&s, "B1"), "10");
         assert_eq!(val(&s, "B2"), "2.5");

@@ -56,8 +56,10 @@ pub fn probe(path: &str) -> Result<MediaInfo> {
     let source = canonical_source(path)?;
     let out = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-print_format", "json",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
             "-show_format",
             "-show_streams",
         ])
@@ -72,7 +74,9 @@ pub fn probe(path: &str) -> Result<MediaInfo> {
         })?;
 
     if !out.status.success() {
-        return Err(Error::Render(String::from_utf8_lossy(&out.stderr).trim().to_string()));
+        return Err(Error::Render(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ));
     }
 
     let json: serde_json::Value =
@@ -112,7 +116,11 @@ fn parse_rational(s: &str) -> f64 {
         Some((n, d)) => {
             let n: f64 = n.parse().unwrap_or(0.0);
             let d: f64 = d.parse().unwrap_or(1.0);
-            if d == 0.0 { 0.0 } else { n / d }
+            if d == 0.0 {
+                0.0
+            } else {
+                n / d
+            }
         }
         None => s.parse().unwrap_or(0.0),
     }
@@ -131,10 +139,16 @@ pub fn thumbnail(source: &str, at: f64, width: u32, out: &Path) -> Result<String
         .arg(out)
         .status()
         .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound { Error::NoFfmpeg } else { Error::Io(e) }
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::NoFfmpeg
+            } else {
+                Error::Io(e)
+            }
         })?;
     if !status.success() {
-        return Err(Error::Render("could not extract a frame at that position".into()));
+        return Err(Error::Render(
+            "could not extract a frame at that position".into(),
+        ));
     }
     Ok(out.to_string_lossy().to_string())
 }
@@ -174,10 +188,24 @@ pub fn waveform(path: &str, buckets: usize) -> Result<Vec<f32>> {
     let out = Command::new("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(&source)
-        .args(["-map", "a:0?", "-ac", "1", "-ar", &RATE.to_string(), "-f", "s16le", "-"])
+        .args([
+            "-map",
+            "a:0?",
+            "-ac",
+            "1",
+            "-ar",
+            &RATE.to_string(),
+            "-f",
+            "s16le",
+            "-",
+        ])
         .output()
         .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound { Error::NoFfmpeg } else { Error::Io(e) }
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::NoFfmpeg
+            } else {
+                Error::Io(e)
+            }
         })?;
 
     // A file with no audio stream is not an error; it simply has no waveform.
@@ -187,7 +215,9 @@ pub fn waveform(path: &str, buckets: usize) -> Result<Vec<f32>> {
 
     let samples: Vec<i16> = out
         .stdout
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| i16::from_le_bytes([c[0], c[1]]))
         .collect();
     if samples.is_empty() {
@@ -225,9 +255,17 @@ mod waveform_tests {
     fn make_tone(name: &str, secs: f64, freq: u32) -> PathBuf {
         let p = std::env::temp_dir().join(format!("odyssey-wave-{name}.wav"));
         let status = Command::new("ffmpeg")
-            .args(["-y", "-v", "error", "-f", "lavfi", "-i",
-                   &format!("sine=frequency={freq}:duration={secs}"),
-                   "-af", "volume=6"])
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("sine=frequency={freq}:duration={secs}"),
+                "-af",
+                "volume=6",
+            ])
             .arg(&p)
             .status()
             .expect("ffmpeg should run");
@@ -237,22 +275,42 @@ mod waveform_tests {
 
     #[test]
     fn extracts_a_peak_envelope() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let tone = make_tone("tone", 1.0, 440);
         let peaks = waveform(&tone.to_string_lossy(), 64).unwrap();
         assert_eq!(peaks.len(), 64);
-        assert!(peaks.iter().all(|p| (0.0..=1.0).contains(p)), "peaks out of range");
+        assert!(
+            peaks.iter().all(|p| (0.0..=1.0).contains(p)),
+            "peaks out of range"
+        );
         let loud = peaks.iter().filter(|p| **p > 0.5).count();
-        assert!(loud > 50, "expected a loud envelope, got {loud}/64 loud buckets");
+        assert!(
+            loud > 50,
+            "expected a loud envelope, got {loud}/64 loud buckets"
+        );
     }
 
     #[test]
     fn silence_reads_as_a_flat_quiet_envelope() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let p = std::env::temp_dir().join("odyssey-wave-silent.wav");
         let status = Command::new("ffmpeg")
-            .args(["-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono:d=1"])
-            .arg(&p).status().unwrap();
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=44100:cl=mono:d=1",
+            ])
+            .arg(&p)
+            .status()
+            .unwrap();
         assert!(status.success());
         let peaks = waveform(&p.to_string_lossy(), 32).unwrap();
         assert_eq!(peaks.len(), 32);
@@ -262,27 +320,50 @@ mod waveform_tests {
     /// A video with no audio track must return an empty envelope, not an error.
     #[test]
     fn a_file_without_audio_has_no_waveform() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let p = std::env::temp_dir().join("odyssey-wave-noaudio.mp4");
         let status = Command::new("ffmpeg")
-            .args(["-y", "-v", "error", "-f", "lavfi", "-i",
-                   "testsrc=size=64x64:rate=10:duration=1", "-c:v", "libx264", "-pix_fmt", "yuv420p"])
-            .arg(&p).status().unwrap();
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x64:rate=10:duration=1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&p)
+            .status()
+            .unwrap();
         assert!(status.success());
         assert!(waveform(&p.to_string_lossy(), 32).unwrap().is_empty());
     }
 
     #[test]
     fn bucket_count_is_clamped() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let tone = make_tone("clamp", 0.5, 220);
         assert_eq!(waveform(&tone.to_string_lossy(), 1).unwrap().len(), 16);
-        assert_eq!(waveform(&tone.to_string_lossy(), 99999).unwrap().len(), 4096);
+        assert_eq!(
+            waveform(&tone.to_string_lossy(), 99999).unwrap().len(),
+            4096
+        );
     }
 
     #[test]
     fn missing_files_are_reported() {
-        assert!(matches!(waveform("/nonexistent/nope.wav", 32), Err(Error::MissingSource(_))));
+        assert!(matches!(
+            waveform("/nonexistent/nope.wav", 32),
+            Err(Error::MissingSource(_))
+        ));
     }
 }
 
@@ -334,7 +415,11 @@ pub fn proxy_path(source: &str, width: u32, cache_dir: &Path) -> Result<PathBuf>
 pub fn find_proxy(source: &str, width: u32, cache_dir: &Path) -> Option<Proxy> {
     let path = proxy_path(source, width, cache_dir).ok()?;
     if path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-        Some(Proxy { source: source.to_string(), path: path.to_string_lossy().to_string(), width })
+        Some(Proxy {
+            source: source.to_string(),
+            path: path.to_string_lossy().to_string(),
+            width,
+        })
     } else {
         None
     }
@@ -367,23 +452,37 @@ pub fn create_proxy(source: &str, width: u32, cache_dir: &Path) -> Result<Proxy>
         .args(["-y", "-hide_banner", "-v", "error", "-i"])
         .arg(&canonical)
         .args([
-            "-vf", &format!("scale={width}:-2"),
-            "-c:v", "libvpx",
+            "-vf",
+            &format!("scale={width}:-2"),
+            "-c:v",
+            "libvpx",
             // Realtime deadline: a proxy that takes longer to build than the
             // edit saves is not a proxy.
-            "-deadline", "realtime",
-            "-cpu-used", "8",
-            "-b:v", "0",
-            "-crf", "32",
-            "-g", "12",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "libopus",
-            "-b:a", "128k",
+            "-deadline",
+            "realtime",
+            "-cpu-used",
+            "8",
+            "-b:v",
+            "0",
+            "-crf",
+            "32",
+            "-g",
+            "12",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "128k",
         ])
         .arg(&path)
         .output()
         .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound { Error::NoFfmpeg } else { Error::Io(e) }
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::NoFfmpeg
+            } else {
+                Error::Io(e)
+            }
         })?;
 
     if !out.status.success() {
@@ -396,11 +495,15 @@ pub fn create_proxy(source: &str, width: u32, cache_dir: &Path) -> Result<Proxy>
 }
 
 pub fn clear_proxies(cache_dir: &Path) -> Result<usize> {
-    let Ok(entries) = std::fs::read_dir(cache_dir) else { return Ok(0) };
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return Ok(0);
+    };
     let mut n = 0;
     for entry in entries.flatten() {
         let p = entry.path();
-        if p.extension().and_then(|e| e.to_str()) == Some("webm") && std::fs::remove_file(&p).is_ok() {
+        if p.extension().and_then(|e| e.to_str()) == Some("webm")
+            && std::fs::remove_file(&p).is_ok()
+        {
             n += 1;
         }
     }
@@ -418,23 +521,46 @@ mod proxy_tests {
     fn make_media(name: &str, w: u32, h: u32) -> PathBuf {
         let p = std::env::temp_dir().join(format!("odyssey-proxy-{name}.mp4"));
         let status = Command::new("ffmpeg")
-            .args(["-y", "-v", "error", "-f", "lavfi", "-i",
-                   &format!("testsrc=size={w}x{h}:rate=30:duration=1"),
-                   "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-                   "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
-            .arg(&p).status().expect("ffmpeg should run");
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("testsrc=size={w}x{h}:rate=30:duration=1"),
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+            ])
+            .arg(&p)
+            .status()
+            .expect("ffmpeg should run");
         assert!(status.success());
         p
     }
 
     #[test]
     fn creates_a_smaller_proxy_and_reuses_it() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("big", 1280, 720);
         let dir = std::env::temp_dir().join("odyssey-proxy-cache");
         let _ = clear_proxies(&dir);
 
-        assert!(find_proxy(&src.to_string_lossy(), 640, &dir).is_none(), "nothing cached yet");
+        assert!(
+            find_proxy(&src.to_string_lossy(), 640, &dir).is_none(),
+            "nothing cached yet"
+        );
 
         let proxy = create_proxy(&src.to_string_lossy(), 640, &dir)
             .unwrap_or_else(|e| panic!("proxy failed:\n{e}"));
@@ -442,8 +568,14 @@ mod proxy_tests {
 
         let info = probe(&proxy.path).unwrap();
         assert_eq!(info.width, 640, "proxy must actually be scaled down");
-        assert!(info.has_audio, "proxy keeps audio so the preview can be heard");
-        assert!(proxy.path.ends_with(".webm"), "proxies are WebM so a webview can decode them");
+        assert!(
+            info.has_audio,
+            "proxy keeps audio so the preview can be heard"
+        );
+        assert!(
+            proxy.path.ends_with(".webm"),
+            "proxies are WebM so a webview can decode them"
+        );
 
         // What matters is pixel throughput, not bytes: a proxy of tiny or very
         // compressible footage can be larger on disk and still decode far cheaper.
@@ -458,7 +590,10 @@ mod proxy_tests {
         // A second call is a cache hit, not a re-encode.
         let before = std::fs::metadata(&proxy.path).unwrap().modified().unwrap();
         let again = create_proxy(&src.to_string_lossy(), 640, &dir).unwrap();
-        assert_eq!(before, std::fs::metadata(&again.path).unwrap().modified().unwrap());
+        assert_eq!(
+            before,
+            std::fs::metadata(&again.path).unwrap().modified().unwrap()
+        );
 
         assert!(find_proxy(&src.to_string_lossy(), 640, &dir).is_some());
         assert!(clear_proxies(&dir).unwrap() >= 1);
@@ -467,7 +602,9 @@ mod proxy_tests {
     /// Replacing the file on disk must invalidate its proxy.
     #[test]
     fn a_changed_source_gets_a_new_key() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("changing", 320, 240);
         let dir = std::env::temp_dir().join("odyssey-proxy-key");
         let first = proxy_path(&src.to_string_lossy(), 640, &dir).unwrap();
@@ -475,12 +612,17 @@ mod proxy_tests {
         std::thread::sleep(std::time::Duration::from_millis(1100));
         let _ = make_media("changing", 640, 480); // same name, different content
         let second = proxy_path(&src.to_string_lossy(), 640, &dir).unwrap();
-        assert_ne!(first, second, "a rewritten source must not reuse its old proxy");
+        assert_ne!(
+            first, second,
+            "a rewritten source must not reuse its old proxy"
+        );
     }
 
     #[test]
     fn proxy_width_is_clamped_and_even() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("clamp", 320, 240);
         let dir = std::env::temp_dir().join("odyssey-proxy-clamp");
         let _ = clear_proxies(&dir);
