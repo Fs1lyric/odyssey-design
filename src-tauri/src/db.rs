@@ -372,11 +372,17 @@ pub fn list_items(conn: &Connection, q: &Query) -> Result<Vec<Item>> {
         binds.push(Box::new(format!("%{}%", escape_like(search))));
     }
     if let Some(before) = &q.due_before {
-        where_parts.push(format!("i.due IS NOT NULL AND i.due <= ?{}", binds.len() + 1));
+        where_parts.push(format!(
+            "i.due IS NOT NULL AND i.due <= ?{}",
+            binds.len() + 1
+        ));
         binds.push(Box::new(before.clone()));
     }
     if let Some(after) = &q.due_after {
-        where_parts.push(format!("i.due IS NOT NULL AND i.due >= ?{}", binds.len() + 1));
+        where_parts.push(format!(
+            "i.due IS NOT NULL AND i.due >= ?{}",
+            binds.len() + 1
+        ));
         binds.push(Box::new(after.clone()));
     }
 
@@ -400,7 +406,9 @@ pub fn list_items(conn: &Connection, q: &Query) -> Result<Vec<Item>> {
 
 /// LIKE treats % and _ as wildcards; a search for "50%" must not match everything.
 fn escape_like(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 pub fn link(conn: &Connection, src: &str, dst: &str, rel: &str) -> Result<Link> {
@@ -442,10 +450,6 @@ pub fn related(conn: &Connection, id: &str) -> Result<Vec<Item>> {
     }
     Ok(out)
 }
-
-
-
-
 
 #[cfg(test)]
 mod tests {
@@ -508,7 +512,10 @@ mod tests {
         let c = open_in_memory().unwrap();
         create_item(&c, item(Kind::Doc, "Quarterly report")).unwrap();
         create_item(&c, item(Kind::Doc, "Up 50% this month")).unwrap();
-        let q = Query { search: Some("50%".into()), ..Default::default() };
+        let q = Query {
+            search: Some("50%".into()),
+            ..Default::default()
+        };
         let hits = list_items(&c, &q).unwrap();
         assert_eq!(hits.len(), 1, "wildcard leaked: {hits:?}");
         assert_eq!(hits[0].title, "Up 50% this month");
@@ -519,7 +526,10 @@ mod tests {
     #[test]
     fn unknown_kind_is_rejected() {
         let c = open_in_memory().unwrap();
-        let q = Query { kind: Some("doc' OR 1=1 --".into()), ..Default::default() };
+        let q = Query {
+            kind: Some("doc' OR 1=1 --".into()),
+            ..Default::default()
+        };
         assert!(list_items(&c, &q).is_err());
     }
 
@@ -530,11 +540,12 @@ mod tests {
         for n in 0..50 {
             create_item(&c, item(Kind::Doc, &format!("doc {n}"))).unwrap();
         }
-        let q = Query { limit: Some(u32::MAX), ..Default::default() };
+        let q = Query {
+            limit: Some(u32::MAX),
+            ..Default::default()
+        };
         assert_eq!(list_items(&c, &q).unwrap().len(), 50);
     }
-
-
 }
 
 #[cfg(test)]

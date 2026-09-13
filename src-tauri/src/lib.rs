@@ -323,7 +323,13 @@ fn render_zone(
     start: f64,
     end: f64,
 ) -> Result<String, timeline::Error> {
-    timeline::render_zone(&project, &profile, std::path::Path::new(&output), start, end)
+    timeline::render_zone(
+        &project,
+        &profile,
+        std::path::Path::new(&output),
+        start,
+        end,
+    )
 }
 
 #[tauri::command]
@@ -355,11 +361,7 @@ fn project_duration(project: timeline::Project) -> f64 {
 }
 
 #[tauri::command]
-fn clip_thumbnail(
-    app: tauri::AppHandle,
-    source: String,
-    at: f64,
-) -> Result<String, video::Error> {
+fn clip_thumbnail(app: tauri::AppHandle, source: String, at: f64) -> Result<String, video::Error> {
     let dir = app
         .path()
         .app_cache_dir()
@@ -379,7 +381,9 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let conn = db::open(&dir.join("odyssey-design.sqlite3"))?;
-            app.manage(AppState { conn: Mutex::new(conn) });
+            app.manage(AppState {
+                conn: Mutex::new(conn),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

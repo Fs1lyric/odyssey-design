@@ -45,18 +45,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum Easing {
+    #[default]
     Linear,
     Hold,
     EaseIn,
     EaseOut,
     EaseInOut,
-}
-
-impl Default for Easing {
-    fn default() -> Self {
-        Easing::Linear
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,7 +97,11 @@ impl Param {
                     return 0.0;
                 }
                 let mut sorted: Vec<&Keyframe> = keyframes.iter().collect();
-                sorted.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+                sorted.sort_by(|a, b| {
+                    a.time
+                        .partial_cmp(&b.time)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
                 if t <= sorted[0].time {
                     return sorted[0].value;
                 }
@@ -134,7 +134,11 @@ impl Param {
                     return "0".into();
                 }
                 let mut kf: Vec<&Keyframe> = keyframes.iter().collect();
-                kf.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+                kf.sort_by(|a, b| {
+                    a.time
+                        .partial_cmp(&b.time)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
                 if kf.len() == 1 {
                     return format!("{:.6}", kf[0].value);
                 }
@@ -151,12 +155,7 @@ impl Param {
                         // Normalised progress within this segment.
                         let p = format!("((t-{:.6})/{:.6})", a.time, span);
                         let eased = ease_expr(&p, a.easing);
-                        format!(
-                            "({:.6}+({:.6})*{})",
-                            a.value,
-                            b.value - a.value,
-                            eased
-                        )
+                        format!("({:.6}+({:.6})*{})", a.value, b.value - a.value, eased)
                     };
                     expr = format!("if(lt(t,{:.6}),{},{})", b.time, seg, expr);
                 }
@@ -220,10 +219,16 @@ pub struct Compiled {
 
 impl Compiled {
     fn f(filter: String) -> Compiled {
-        Compiled { filters: vec![filter], commands: Vec::new() }
+        Compiled {
+            filters: vec![filter],
+            commands: Vec::new(),
+        }
     }
     fn many(filters: Vec<String>) -> Compiled {
-        Compiled { filters, commands: Vec::new() }
+        Compiled {
+            filters,
+            commands: Vec::new(),
+        }
     }
 }
 
@@ -237,17 +242,32 @@ const MAX_SAMPLES: usize = 2400;
 fn sample_times(dur: f64, fps: u32) -> Vec<f64> {
     let rate = (fps.max(1)) as f64;
     let n = ((dur * rate).ceil() as usize).clamp(2, MAX_SAMPLES);
-    (0..n).map(|i| dur * (i as f64) / ((n - 1) as f64)).collect()
+    (0..n)
+        .map(|i| dur * (i as f64) / ((n - 1) as f64))
+        .collect()
 }
 
 /// Emit timed commands stepping `option` along the parameter's curve.
-fn commands_for(p: &Param, target: &str, option: &str, dur: f64, fps: u32) -> Vec<(f64, String, String, String)> {
+fn commands_for(
+    p: &Param,
+    target: &str,
+    option: &str,
+    dur: f64,
+    fps: u32,
+) -> Vec<(f64, String, String, String)> {
     if !p.is_animated() {
         return Vec::new();
     }
     sample_times(dur, fps)
         .into_iter()
-        .map(|t| (t, target.to_string(), option.to_string(), format!("{:.6}", p.value_at(t))))
+        .map(|t| {
+            (
+                t,
+                target.to_string(),
+                option.to_string(),
+                format!("{:.6}", p.value_at(t)),
+            )
+        })
         .collect()
 }
 
@@ -279,69 +299,142 @@ fn stacked(p: &Param, dur: f64, fps: u32, build: impl Fn(f64) -> String) -> Vec<
 pub enum Effect {
     /// Brightness -1..1, contrast 0..4, saturation 0..3, gamma 0.1..10.
     Color {
-        #[serde(default = "p_zero")] brightness: Param,
-        #[serde(default = "p_one")]  contrast: Param,
-        #[serde(default = "p_one")]  saturation: Param,
-        #[serde(default = "p_one")]  gamma: Param,
+        #[serde(default = "p_zero")]
+        brightness: Param,
+        #[serde(default = "p_one")]
+        contrast: Param,
+        #[serde(default = "p_one")]
+        saturation: Param,
+        #[serde(default = "p_one")]
+        gamma: Param,
     },
     /// Hue rotation in degrees.
-    Hue { #[serde(default = "p_zero")] degrees: Param },
+    Hue {
+        #[serde(default = "p_zero")]
+        degrees: Param,
+    },
     /// Gaussian blur, sigma in pixels.
-    Blur { #[serde(default = "p_zero")] sigma: Param },
-    Sharpen { #[serde(default = "p_one")] amount: Param },
+    Blur {
+        #[serde(default = "p_zero")]
+        sigma: Param,
+    },
+    Sharpen {
+        #[serde(default = "p_one")]
+        amount: Param,
+    },
     /// Opacity 0..1, applied to the clip's alpha before compositing.
-    Opacity { #[serde(default = "p_one")] level: Param },
+    Opacity {
+        #[serde(default = "p_one")]
+        level: Param,
+    },
     /// Fade from/to black at the clip's head and tail, in seconds.
-    Fade { #[serde(default)] in_secs: f64, #[serde(default)] out_secs: f64 },
+    Fade {
+        #[serde(default)]
+        in_secs: f64,
+        #[serde(default)]
+        out_secs: f64,
+    },
     /// Crop to a rectangle, in pixels.
-    Crop { x: Param, y: Param, width: f64, height: f64 },
+    Crop {
+        x: Param,
+        y: Param,
+        width: f64,
+        height: f64,
+    },
     /// Rotation in degrees, about the centre.
-    Rotate { #[serde(default = "p_zero")] degrees: Param },
+    Rotate {
+        #[serde(default = "p_zero")]
+        degrees: Param,
+    },
     /// Uniform scale factor, 1.0 is unchanged. Pan offsets in pixels.
     Transform {
-        #[serde(default = "p_one")]  scale: Param,
-        #[serde(default = "p_zero")] x: Param,
-        #[serde(default = "p_zero")] y: Param,
+        #[serde(default = "p_one")]
+        scale: Param,
+        #[serde(default = "p_zero")]
+        x: Param,
+        #[serde(default = "p_zero")]
+        y: Param,
     },
-    Vignette { #[serde(default = "p_zero")] angle: Param },
+    Vignette {
+        #[serde(default = "p_zero")]
+        angle: Param,
+    },
     /// Key out a colour. `similarity` and `blend` are 0..1.
-    ChromaKey { color: String, #[serde(default = "p_point_one")] similarity: Param, #[serde(default = "p_zero")] blend: Param },
+    ChromaKey {
+        color: String,
+        #[serde(default = "p_point_one")]
+        similarity: Param,
+        #[serde(default = "p_zero")]
+        blend: Param,
+    },
     /// Burn text onto the clip.
     Text {
         content: String,
-        #[serde(default = "d_size")] size: f64,
-        #[serde(default = "d_white")] color: String,
-        #[serde(default = "p_zero")] x: Param,
-        #[serde(default = "p_zero")] y: Param,
-        #[serde(default)] font: String,
+        #[serde(default = "d_size")]
+        size: f64,
+        #[serde(default = "d_white")]
+        color: String,
+        #[serde(default = "p_zero")]
+        x: Param,
+        #[serde(default = "p_zero")]
+        y: Param,
+        #[serde(default)]
+        font: String,
     },
     /// Audio gain multiplier.
-    Volume { #[serde(default = "p_one")] level: Param },
+    Volume {
+        #[serde(default = "p_one")]
+        level: Param,
+    },
     /// Audio fades in seconds.
-    AudioFade { #[serde(default)] in_secs: f64, #[serde(default)] out_secs: f64 },
-    Highpass { #[serde(default = "p_two_hundred")] frequency: Param },
-    Lowpass { #[serde(default = "p_three_thousand")] frequency: Param },
+    AudioFade {
+        #[serde(default)]
+        in_secs: f64,
+        #[serde(default)]
+        out_secs: f64,
+    },
+    Highpass {
+        #[serde(default = "p_two_hundred")]
+        frequency: Param,
+    },
+    Lowpass {
+        #[serde(default = "p_three_thousand")]
+        frequency: Param,
+    },
     /// Lumetri-style curve grading. Each channel is a list of control points
     /// in 0..1, which is exactly what ffmpeg's `curves` filter takes.
     Curves {
-        #[serde(default)] master: Vec<(f64, f64)>,
-        #[serde(default)] red: Vec<(f64, f64)>,
-        #[serde(default)] green: Vec<(f64, f64)>,
-        #[serde(default)] blue: Vec<(f64, f64)>,
+        #[serde(default)]
+        master: Vec<(f64, f64)>,
+        #[serde(default)]
+        red: Vec<(f64, f64)>,
+        #[serde(default)]
+        green: Vec<(f64, f64)>,
+        #[serde(default)]
+        blue: Vec<(f64, f64)>,
     },
     /// Three-way colour correction: shadows, midtones, highlights, per channel.
     /// Premiere calls these the colour wheels; ffmpeg calls them shadows,
     /// midtones and highlights on `colorbalance`.
     ColorWheels {
-        #[serde(default = "p_zero")] lift_r: Param,
-        #[serde(default = "p_zero")] lift_g: Param,
-        #[serde(default = "p_zero")] lift_b: Param,
-        #[serde(default = "p_zero")] gamma_r: Param,
-        #[serde(default = "p_zero")] gamma_g: Param,
-        #[serde(default = "p_zero")] gamma_b: Param,
-        #[serde(default = "p_zero")] gain_r: Param,
-        #[serde(default = "p_zero")] gain_g: Param,
-        #[serde(default = "p_zero")] gain_b: Param,
+        #[serde(default = "p_zero")]
+        lift_r: Param,
+        #[serde(default = "p_zero")]
+        lift_g: Param,
+        #[serde(default = "p_zero")]
+        lift_b: Param,
+        #[serde(default = "p_zero")]
+        gamma_r: Param,
+        #[serde(default = "p_zero")]
+        gamma_g: Param,
+        #[serde(default = "p_zero")]
+        gamma_b: Param,
+        #[serde(default = "p_zero")]
+        gain_r: Param,
+        #[serde(default = "p_zero")]
+        gain_g: Param,
+        #[serde(default = "p_zero")]
+        gain_b: Param,
     },
     /// A 3D lookup table, the way a creative LUT is applied.
     Lut3d { path: String },
@@ -349,39 +442,78 @@ pub enum Effect {
     /// without one the effect is inert, because vidstabtransform has nothing
     /// to work from.
     Stabilize {
-        #[serde(default)] trf: String,
-        #[serde(default = "d_smoothing")] smoothing: f64,
-        #[serde(default = "d_zoom")] zoom: f64,
+        #[serde(default)]
+        trf: String,
+        #[serde(default = "d_smoothing")]
+        smoothing: f64,
+        #[serde(default = "d_zoom")]
+        zoom: f64,
     },
     /// EBU R128 loudness normalisation.
-    Loudness { #[serde(default = "d_lufs")] target: f64 },
+    Loudness {
+        #[serde(default = "d_lufs")]
+        target: f64,
+    },
     /// Temporal and spatial denoise.
-    Denoise { #[serde(default = "d_denoise")] strength: f64 },
+    Denoise {
+        #[serde(default = "d_denoise")]
+        strength: f64,
+    },
     /// Mirror horizontally or vertically.
-    Flip { #[serde(default)] horizontal: bool, #[serde(default)] vertical: bool },
+    Flip {
+        #[serde(default)]
+        horizontal: bool,
+        #[serde(default)]
+        vertical: bool,
+    },
     /// Mosaic the picture.
-    Pixelate { #[serde(default = "d_pixel")] size: Param },
+    Pixelate {
+        #[serde(default = "d_pixel")]
+        size: Param,
+    },
     /// Invert the picture.
     Invert,
     /// Reduce the picture to shades of grey.
     Monochrome,
     /// Warm or cool the picture, in kelvin.
-    Temperature { #[serde(default = "d_kelvin")] kelvin: Param },
+    Temperature {
+        #[serde(default = "d_kelvin")]
+        kelvin: Param,
+    },
     /// Lift or crush blacks and whites.
     Levels {
-        #[serde(default = "p_zero")] black: Param,
-        #[serde(default = "p_one")] white: Param,
+        #[serde(default = "p_zero")]
+        black: Param,
+        #[serde(default = "p_one")]
+        white: Param,
     },
     /// Exposure, as a stop adjustment.
-    Exposure { #[serde(default = "p_zero")] stops: Param },
+    Exposure {
+        #[serde(default = "p_zero")]
+        stops: Param,
+    },
     /// Film grain.
-    Grain { #[serde(default = "d_grain")] strength: f64 },
+    Grain {
+        #[serde(default = "d_grain")]
+        strength: f64,
+    },
     /// Directional or box blur, cheaper than gaussian for large radii.
-    BoxBlur { #[serde(default = "d_box")] radius: Param },
+    BoxBlur {
+        #[serde(default = "d_box")]
+        radius: Param,
+    },
     /// Motion blur by blending neighbouring frames.
-    MotionBlur { #[serde(default = "d_frames")] frames: f64 },
+    MotionBlur {
+        #[serde(default = "d_frames")]
+        frames: f64,
+    },
     /// Outline edges.
-    EdgeDetect { #[serde(default = "d_edge")] low: f64, #[serde(default = "d_edge_hi")] high: f64 },
+    EdgeDetect {
+        #[serde(default = "d_edge")]
+        low: f64,
+        #[serde(default = "d_edge_hi")]
+        high: f64,
+    },
     /// Emboss, through a convolution kernel.
     Emboss,
     /// Sharpen with a convolution rather than unsharp masking.
@@ -391,80 +523,198 @@ pub enum Effect {
     /// Even out flicker between frames.
     Deflicker,
     /// Correct barrel or pincushion distortion.
-    LensCorrect { #[serde(default = "p_zero")] k1: Param, #[serde(default = "p_zero")] k2: Param },
+    LensCorrect {
+        #[serde(default = "p_zero")]
+        k1: Param,
+        #[serde(default = "p_zero")]
+        k2: Param,
+    },
     /// Key on brightness rather than colour.
-    LumaKey { #[serde(default = "d_luma")] threshold: Param, #[serde(default = "p_point_one")] tolerance: Param },
+    LumaKey {
+        #[serde(default = "d_luma")]
+        threshold: Param,
+        #[serde(default = "p_point_one")]
+        tolerance: Param,
+    },
     /// Remove the green or blue spill a key leaves behind.
-    Despill { #[serde(default = "d_green")] colour: String, #[serde(default = "p_one")] amount: Param },
+    Despill {
+        #[serde(default = "d_green")]
+        colour: String,
+        #[serde(default = "p_one")]
+        amount: Param,
+    },
     /// Shift the colour channels apart.
-    ChromaShift { #[serde(default = "p_zero")] x: Param, #[serde(default = "p_zero")] y: Param },
+    ChromaShift {
+        #[serde(default = "p_zero")]
+        x: Param,
+        #[serde(default = "p_zero")]
+        y: Param,
+    },
     /// Letterbox or pillarbox to a target aspect ratio.
-    Reframe { #[serde(default = "d_aspect")] aspect: f64 },
+    Reframe {
+        #[serde(default = "d_aspect")]
+        aspect: f64,
+    },
     /// Posterise to a fixed number of levels.
-    Posterize { #[serde(default = "d_levels")] levels: Param },
+    Posterize {
+        #[serde(default = "d_levels")]
+        levels: Param,
+    },
 
     // ---- audio ----
     /// Echo.
-    Echo { #[serde(default = "d_delay")] delay_ms: f64, #[serde(default = "d_decay")] decay: f64 },
+    Echo {
+        #[serde(default = "d_delay")]
+        delay_ms: f64,
+        #[serde(default = "d_decay")]
+        decay: f64,
+    },
     /// Chorus.
-    Chorus { #[serde(default = "d_depth")] depth: f64 },
+    Chorus {
+        #[serde(default = "d_depth")]
+        depth: f64,
+    },
     /// Flanger.
-    Flanger { #[serde(default = "d_depth")] depth: f64 },
+    Flanger {
+        #[serde(default = "d_depth")]
+        depth: f64,
+    },
     /// Shift pitch without changing length.
-    PitchShift { #[serde(default = "p_one")] ratio: Param },
+    PitchShift {
+        #[serde(default = "p_one")]
+        ratio: Param,
+    },
     /// Gate out noise below a threshold.
-    NoiseGate { #[serde(default = "d_gate")] threshold: f64 },
+    NoiseGate {
+        #[serde(default = "d_gate")]
+        threshold: f64,
+    },
     /// Compress dynamics.
     Compressor {
-        #[serde(default = "d_comp_threshold")] threshold: f64,
-        #[serde(default = "d_comp_ratio")] ratio: f64,
+        #[serde(default = "d_comp_threshold")]
+        threshold: f64,
+        #[serde(default = "d_comp_ratio")]
+        ratio: f64,
     },
     /// Stop anything exceeding a ceiling.
-    Limiter { #[serde(default = "d_limit")] ceiling: f64 },
+    Limiter {
+        #[serde(default = "d_limit")]
+        ceiling: f64,
+    },
     /// Widen or narrow the stereo image.
-    StereoWidth { #[serde(default = "p_one")] amount: Param },
+    StereoWidth {
+        #[serde(default = "p_one")]
+        amount: Param,
+    },
     /// Fold to mono.
     Mono,
     /// Swap left and right.
     SwapChannels,
     /// Strip silence from the head and tail.
-    TrimSilence { #[serde(default = "d_silence")] threshold: f64 },
+    TrimSilence {
+        #[serde(default = "d_silence")]
+        threshold: f64,
+    },
     /// Any installed frei0r plugin. This is how the effect count reaches the
     /// hundreds: the same plugin library Kdenlive draws on. Parameters are
     /// frei0r's own normalised 0..1 values, in the plugin's declared order.
-    Frei0r { name: String, #[serde(default)] params: Vec<Param> },
+    Frei0r {
+        name: String,
+        #[serde(default)]
+        params: Vec<Param>,
+    },
 }
 
-fn p_zero() -> Param { Param::Static(0.0) }
-fn p_one() -> Param { Param::Static(1.0) }
-fn p_point_one() -> Param { Param::Static(0.1) }
-fn p_two_hundred() -> Param { Param::Static(200.0) }
-fn p_three_thousand() -> Param { Param::Static(3000.0) }
-fn d_size() -> f64 { 48.0 }
-fn d_smoothing() -> f64 { 10.0 }
-fn d_zoom() -> f64 { 0.0 }
-fn d_lufs() -> f64 { -16.0 }
-fn d_denoise() -> f64 { 4.0 }
-fn d_pixel() -> Param { Param::Static(16.0) }
-fn d_kelvin() -> Param { Param::Static(6500.0) }
-fn d_grain() -> f64 { 8.0 }
-fn d_box() -> Param { Param::Static(4.0) }
-fn d_frames() -> f64 { 3.0 }
-fn d_edge() -> f64 { 0.1 }
-fn d_edge_hi() -> f64 { 0.4 }
-fn d_luma() -> Param { Param::Static(0.1) }
-fn d_green() -> String { "green".into() }
-fn d_aspect() -> f64 { 16.0 / 9.0 }
-fn d_levels() -> Param { Param::Static(6.0) }
-fn d_delay() -> f64 { 300.0 }
-fn d_decay() -> f64 { 0.4 }
-fn d_depth() -> f64 { 0.5 }
-fn d_gate() -> f64 { 0.02 }
-fn d_comp_threshold() -> f64 { 0.125 }
-fn d_comp_ratio() -> f64 { 4.0 }
-fn d_limit() -> f64 { 0.95 }
-fn d_silence() -> f64 { 0.02 }
-fn d_white() -> String { "white".into() }
+fn p_zero() -> Param {
+    Param::Static(0.0)
+}
+fn p_one() -> Param {
+    Param::Static(1.0)
+}
+fn p_point_one() -> Param {
+    Param::Static(0.1)
+}
+fn p_two_hundred() -> Param {
+    Param::Static(200.0)
+}
+fn p_three_thousand() -> Param {
+    Param::Static(3000.0)
+}
+fn d_size() -> f64 {
+    48.0
+}
+fn d_smoothing() -> f64 {
+    10.0
+}
+fn d_zoom() -> f64 {
+    0.0
+}
+fn d_lufs() -> f64 {
+    -16.0
+}
+fn d_denoise() -> f64 {
+    4.0
+}
+fn d_pixel() -> Param {
+    Param::Static(16.0)
+}
+fn d_kelvin() -> Param {
+    Param::Static(6500.0)
+}
+fn d_grain() -> f64 {
+    8.0
+}
+fn d_box() -> Param {
+    Param::Static(4.0)
+}
+fn d_frames() -> f64 {
+    3.0
+}
+fn d_edge() -> f64 {
+    0.1
+}
+fn d_edge_hi() -> f64 {
+    0.4
+}
+fn d_luma() -> Param {
+    Param::Static(0.1)
+}
+fn d_green() -> String {
+    "green".into()
+}
+fn d_aspect() -> f64 {
+    16.0 / 9.0
+}
+fn d_levels() -> Param {
+    Param::Static(6.0)
+}
+fn d_delay() -> f64 {
+    300.0
+}
+fn d_decay() -> f64 {
+    0.4
+}
+fn d_depth() -> f64 {
+    0.5
+}
+fn d_gate() -> f64 {
+    0.02
+}
+fn d_comp_threshold() -> f64 {
+    0.125
+}
+fn d_comp_ratio() -> f64 {
+    4.0
+}
+fn d_limit() -> f64 {
+    0.95
+}
+fn d_silence() -> f64 {
+    0.02
+}
+fn d_white() -> String {
+    "white".into()
+}
 
 impl Effect {
     pub fn is_audio(&self) -> bool {
@@ -497,27 +747,60 @@ impl Effect {
     #[allow(dead_code)]
     pub fn animation_route(&self) -> &'static str {
         match self {
-            Effect::Color { .. } | Effect::Crop { .. } | Effect::Rotate { .. }
-            | Effect::Volume { .. } | Effect::Text { .. } | Effect::Vignette { .. } => "expression",
-            Effect::Blur { .. } | Effect::Hue { .. } | Effect::ChromaKey { .. }
-            | Effect::Opacity { .. } | Effect::Highpass { .. } | Effect::Lowpass { .. }
+            Effect::Color { .. }
+            | Effect::Crop { .. }
+            | Effect::Rotate { .. }
+            | Effect::Volume { .. }
+            | Effect::Text { .. }
+            | Effect::Vignette { .. } => "expression",
+            Effect::Blur { .. }
+            | Effect::Hue { .. }
+            | Effect::ChromaKey { .. }
+            | Effect::Opacity { .. }
+            | Effect::Highpass { .. }
+            | Effect::Lowpass { .. }
             | Effect::Transform { .. } => "command",
             Effect::Sharpen { .. } | Effect::Frei0r { .. } => "stacked",
-            Effect::Fade { .. } | Effect::AudioFade { .. } | Effect::Curves { .. }
-            | Effect::Lut3d { .. } | Effect::Stabilize { .. } | Effect::Loudness { .. }
+            Effect::Fade { .. }
+            | Effect::AudioFade { .. }
+            | Effect::Curves { .. }
+            | Effect::Lut3d { .. }
+            | Effect::Stabilize { .. }
+            | Effect::Loudness { .. }
             | Effect::Denoise { .. } => "static",
             Effect::ColorWheels { .. } => "command",
-            Effect::Pixelate { .. } | Effect::Temperature { .. } | Effect::Levels { .. }
-            | Effect::Exposure { .. } | Effect::BoxBlur { .. } | Effect::LensCorrect { .. }
-            | Effect::LumaKey { .. } | Effect::Despill { .. } | Effect::ChromaShift { .. }
-            | Effect::Posterize { .. } | Effect::PitchShift { .. }
+            Effect::Pixelate { .. }
+            | Effect::Temperature { .. }
+            | Effect::Levels { .. }
+            | Effect::Exposure { .. }
+            | Effect::BoxBlur { .. }
+            | Effect::LensCorrect { .. }
+            | Effect::LumaKey { .. }
+            | Effect::Despill { .. }
+            | Effect::ChromaShift { .. }
+            | Effect::Posterize { .. }
+            | Effect::PitchShift { .. }
             | Effect::StereoWidth { .. } => "command",
-            Effect::Flip { .. } | Effect::Invert | Effect::Monochrome | Effect::Grain { .. }
-            | Effect::MotionBlur { .. } | Effect::EdgeDetect { .. } | Effect::Emboss
-            | Effect::Crisp | Effect::Deband | Effect::Deflicker | Effect::Reframe { .. }
-            | Effect::Echo { .. } | Effect::Chorus { .. } | Effect::Flanger { .. }
-            | Effect::NoiseGate { .. } | Effect::Compressor { .. } | Effect::Limiter { .. }
-            | Effect::Mono | Effect::SwapChannels | Effect::TrimSilence { .. } => "static",
+            Effect::Flip { .. }
+            | Effect::Invert
+            | Effect::Monochrome
+            | Effect::Grain { .. }
+            | Effect::MotionBlur { .. }
+            | Effect::EdgeDetect { .. }
+            | Effect::Emboss
+            | Effect::Crisp
+            | Effect::Deband
+            | Effect::Deflicker
+            | Effect::Reframe { .. }
+            | Effect::Echo { .. }
+            | Effect::Chorus { .. }
+            | Effect::Flanger { .. }
+            | Effect::NoiseGate { .. }
+            | Effect::Compressor { .. }
+            | Effect::Limiter { .. }
+            | Effect::Mono
+            | Effect::SwapChannels
+            | Effect::TrimSilence { .. } => "static",
         }
     }
 
@@ -926,7 +1209,10 @@ fn frei0r_filter(plugin: &str, params: &[String]) -> String {
     if params.is_empty() {
         format!("frei0r=filter_name={plugin}")
     } else {
-        format!("frei0r=filter_name={plugin}:filter_params={}", params.join("|"))
+        format!(
+            "frei0r=filter_name={plugin}:filter_params={}",
+            params.join("|")
+        )
     }
 }
 
@@ -946,7 +1232,10 @@ fn sanitise_plugin(name: &str) -> String {
     if name.is_empty() || name.len() > 64 {
         return String::new();
     }
-    if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         name.to_string()
     } else {
         String::new()
@@ -958,7 +1247,11 @@ fn sanitise_color(c: &str) -> String {
     let ok = c
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || ch == '#' || ch == '@' || ch == '.');
-    if ok && !c.is_empty() { c.to_string() } else { "black".to_string() }
+    if ok && !c.is_empty() {
+        c.to_string()
+    } else {
+        "black".to_string()
+    }
 }
 
 /// drawtext parses its own mini-language; these characters must not leak.
@@ -980,9 +1273,12 @@ pub enum Source {
     /// A generated title card.
     Title {
         text: String,
-        #[serde(default = "d_black")] background: String,
-        #[serde(default = "d_size")] size: f64,
-        #[serde(default = "d_white")] color: String,
+        #[serde(default = "d_black")]
+        background: String,
+        #[serde(default = "d_size")]
+        size: f64,
+        #[serde(default = "d_white")]
+        color: String,
     },
     /// A solid colour card, useful for gaps, flashes and backgrounds.
     Color { color: String },
@@ -998,7 +1294,9 @@ pub enum Source {
     Nested { name: String, project: Box<Project> },
 }
 
-fn d_black() -> String { "black".into() }
+fn d_black() -> String {
+    "black".into()
+}
 
 /// Intrinsic clip motion, the way Premiere gives every clip a Motion section.
 ///
@@ -1007,24 +1305,33 @@ fn d_black() -> String { "black".into() }
 /// about the anchor, and opacity is 0..1. All of them keyframe.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Motion {
-    #[serde(default = "p_zero")] pub x: Param,
-    #[serde(default = "p_zero")] pub y: Param,
-    #[serde(default = "p_hundred")] pub scale: Param,
-    #[serde(default = "p_zero")] pub rotation: Param,
+    #[serde(default = "p_zero")]
+    pub x: Param,
+    #[serde(default = "p_zero")]
+    pub y: Param,
+    #[serde(default = "p_hundred")]
+    pub scale: Param,
+    #[serde(default = "p_zero")]
+    pub rotation: Param,
     /// Anchor offset from the clip's centre, in project pixels. Rotation and
     /// scale happen about this point.
-    #[serde(default = "p_zero")] pub anchor_x: Param,
-    #[serde(default = "p_zero")] pub anchor_y: Param,
-    #[serde(default = "p_one")] pub opacity: Param,
+    #[serde(default = "p_zero")]
+    pub anchor_x: Param,
+    #[serde(default = "p_zero")]
+    pub anchor_y: Param,
+    #[serde(default = "p_one")]
+    pub opacity: Param,
 }
 
 impl Default for Motion {
     fn default() -> Self {
         Motion {
-            x: p_zero(), y: p_zero(),
+            x: p_zero(),
+            y: p_zero(),
             scale: p_hundred(),
             rotation: p_zero(),
-            anchor_x: p_zero(), anchor_y: p_zero(),
+            anchor_x: p_zero(),
+            anchor_y: p_zero(),
             opacity: p_one(),
         }
     }
@@ -1033,27 +1340,43 @@ impl Default for Motion {
 impl Motion {
     /// True when nothing has been moved, so the renderer can skip the work.
     pub fn is_identity(&self) -> bool {
-        !self.x.is_animated() && self.x.first() == 0.0
-            && !self.y.is_animated() && self.y.first() == 0.0
-            && !self.scale.is_animated() && (self.scale.first() - 100.0).abs() < 1e-9
-            && !self.rotation.is_animated() && self.rotation.first() == 0.0
-            && !self.anchor_x.is_animated() && self.anchor_x.first() == 0.0
-            && !self.anchor_y.is_animated() && self.anchor_y.first() == 0.0
-            && !self.opacity.is_animated() && (self.opacity.first() - 1.0).abs() < 1e-9
+        !self.x.is_animated()
+            && self.x.first() == 0.0
+            && !self.y.is_animated()
+            && self.y.first() == 0.0
+            && !self.scale.is_animated()
+            && (self.scale.first() - 100.0).abs() < 1e-9
+            && !self.rotation.is_animated()
+            && self.rotation.first() == 0.0
+            && !self.anchor_x.is_animated()
+            && self.anchor_x.first() == 0.0
+            && !self.anchor_y.is_animated()
+            && self.anchor_y.first() == 0.0
+            && !self.opacity.is_animated()
+            && (self.opacity.first() - 1.0).abs() < 1e-9
     }
 }
 
 /// How a clip combines with what is beneath it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum BlendMode {
-    Normal, Multiply, Screen, Overlay, Darken, Lighten,
-    ColorDodge, ColorBurn, HardLight, SoftLight,
-    Difference, Exclusion, Addition, Subtract,
-}
-
-impl Default for BlendMode {
-    fn default() -> Self { BlendMode::Normal }
+    #[default]
+    Normal,
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    Addition,
+    Subtract,
 }
 
 impl BlendMode {
@@ -1078,7 +1401,9 @@ impl BlendMode {
     }
 }
 
-fn p_hundred() -> Param { Param::Static(100.0) }
+fn p_hundred() -> Param {
+    Param::Static(100.0)
+}
 
 impl Motion {
     /// Filters applied to the clip layer itself: scale, rotation and opacity.
@@ -1108,7 +1433,10 @@ impl Motion {
         let op_animated = self.opacity.is_animated();
         if op_animated || (self.opacity.first() - 1.0).abs() > 1e-9 {
             c.filters.push("format=yuva420p".into());
-            c.filters.push(format!("colorchannelmixer=aa={:.6}", self.opacity.first().clamp(0.0, 1.0)));
+            c.filters.push(format!(
+                "colorchannelmixer=aa={:.6}",
+                self.opacity.first().clamp(0.0, 1.0)
+            ));
             c.commands = commands_for(&self.opacity, "colorchannelmixer", "aa", dur, fps);
         }
         c
@@ -1157,7 +1485,9 @@ pub struct Transition {
     pub duration: f64,
 }
 
-fn d_transition() -> f64 { 0.5 }
+fn d_transition() -> f64 {
+    0.5
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Clip {
@@ -1200,8 +1530,12 @@ pub struct Clip {
     pub transition_in: Option<Transition>,
 }
 
-fn one_f() -> f64 { 1.0 }
-fn yes() -> bool { true }
+fn one_f() -> f64 {
+    1.0
+}
+fn yes() -> bool {
+    true
+}
 
 /// One constant-speed span of a clip. A clip with a static speed has exactly
 /// one; a keyframed (remapped) clip has many.
@@ -1229,7 +1563,11 @@ impl Clip {
 
     fn speed_at(&self, src_offset: f64) -> f64 {
         let v = self.speed.value_at(src_offset).abs();
-        if v < 0.01 { 0.01 } else { v }
+        if v < 0.01 {
+            0.01
+        } else {
+            v
+        }
     }
 
     /// Cut the clip into constant-speed segments. Speed keyframes are indexed
@@ -1251,7 +1589,8 @@ impl Clip {
             }];
         }
 
-        let n = ((src_len * SPEED_SEGMENTS_PER_SECOND).ceil() as usize).clamp(2, MAX_SPEED_SEGMENTS);
+        let n =
+            ((src_len * SPEED_SEGMENTS_PER_SECOND).ceil() as usize).clamp(2, MAX_SPEED_SEGMENTS);
         let step = src_len / n as f64;
         let mut out = Vec::with_capacity(n);
         let mut cursor = 0.0;
@@ -1360,26 +1699,34 @@ pub struct Track {
     pub duck_release: f64,
 }
 
-fn d_duck_threshold() -> f64 { 0.05 }
-fn d_duck_ratio() -> f64 { 8.0 }
-fn d_duck_attack() -> f64 { 20.0 }
-fn d_duck_release() -> f64 { 300.0 }
+fn d_duck_threshold() -> f64 {
+    0.05
+}
+fn d_duck_ratio() -> f64 {
+    8.0
+}
+fn d_duck_attack() -> f64 {
+    20.0
+}
+fn d_duck_release() -> f64 {
+    300.0
+}
 
-fn d_track_name() -> String { "Track".into() }
+fn d_track_name() -> String {
+    "Track".into()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum SubtitleMode {
     /// No subtitles in the output.
+    #[default]
     Off,
     /// Drawn into the picture. Universal, but permanent.
     Burn,
     /// A selectable track the viewer can switch off. Container-dependent.
     Embed,
-}
-
-impl Default for SubtitleMode {
-    fn default() -> Self { SubtitleMode::Off }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1432,7 +1779,9 @@ pub struct Marker {
     pub colour: String,
 }
 
-fn d_marker_colour() -> String { "#2C5FC9".into() }
+fn d_marker_colour() -> String {
+    "#2C5FC9".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
@@ -1455,19 +1804,36 @@ pub struct Project {
     pub subtitle_mode: SubtitleMode,
     #[serde(default = "d_sub_size")]
     pub subtitle_size: f64,
-    #[serde(default = "d_w")] pub width: u32,
-    #[serde(default = "d_h")] pub height: u32,
-    #[serde(default = "d_fps")] pub fps: u32,
-    #[serde(default = "d_rate")] pub sample_rate: u32,
-    #[serde(default = "d_bg")] pub background: String,
+    #[serde(default = "d_w")]
+    pub width: u32,
+    #[serde(default = "d_h")]
+    pub height: u32,
+    #[serde(default = "d_fps")]
+    pub fps: u32,
+    #[serde(default = "d_rate")]
+    pub sample_rate: u32,
+    #[serde(default = "d_bg")]
+    pub background: String,
 }
 
-fn d_sub_size() -> f64 { 42.0 }
-fn d_w() -> u32 { 1920 }
-fn d_h() -> u32 { 1080 }
-fn d_fps() -> u32 { 30 }
-fn d_rate() -> u32 { 48000 }
-fn d_bg() -> String { "black".into() }
+fn d_sub_size() -> f64 {
+    42.0
+}
+fn d_w() -> u32 {
+    1920
+}
+fn d_h() -> u32 {
+    1080
+}
+fn d_fps() -> u32 {
+    30
+}
+fn d_rate() -> u32 {
+    48000
+}
+fn d_bg() -> String {
+    "black".into()
+}
 
 impl Default for Project {
     fn default() -> Self {
@@ -1508,10 +1874,14 @@ impl Project {
             return Err(Error::Empty);
         }
         if self.width == 0 || self.height == 0 || self.fps == 0 {
-            return Err(Error::Invalid("frame size and rate must be non-zero".into()));
+            return Err(Error::Invalid(
+                "frame size and rate must be non-zero".into(),
+            ));
         }
-        if self.width % 2 != 0 || self.height % 2 != 0 {
-            return Err(Error::Invalid("H.264 requires even frame dimensions".into()));
+        if !self.width.is_multiple_of(2) || !self.height.is_multiple_of(2) {
+            return Err(Error::Invalid(
+                "H.264 requires even frame dimensions".into(),
+            ));
         }
         for track in &self.tracks {
             for clip in &track.clips {
@@ -1522,10 +1892,16 @@ impl Project {
                     )));
                 }
                 if clip.in_point < 0.0 || clip.start < 0.0 {
-                    return Err(Error::Invalid(format!("clip {} has a negative position", clip.id)));
+                    return Err(Error::Invalid(format!(
+                        "clip {} has a negative position",
+                        clip.id
+                    )));
                 }
                 let slowest = if clip.speed.is_animated() {
-                    clip.segments().iter().map(|s| s.speed).fold(f64::MAX, f64::min)
+                    clip.segments()
+                        .iter()
+                        .map(|s| s.speed)
+                        .fold(f64::MAX, f64::min)
                 } else {
                     clip.speed.first().abs()
                 };
@@ -1561,8 +1937,12 @@ pub struct RenderProfile {
     pub preset: String,
 }
 
-fn d_abr() -> String { "192k".into() }
-fn d_preset() -> String { "medium".into() }
+fn d_abr() -> String {
+    "192k".into()
+}
+fn d_preset() -> String {
+    "medium".into()
+}
 
 /// One installed frei0r plugin.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1593,13 +1973,17 @@ pub fn frei0r_plugins() -> Vec<Frei0rPlugin> {
 
     let mut seen = std::collections::BTreeMap::new();
     for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("so") {
                 continue;
             }
-            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
             let name = sanitise_plugin(stem);
             if name.is_empty() {
                 continue;
@@ -1627,15 +2011,24 @@ fn humanise(name: &str) -> String {
 /// cannot run is worse than not offering it, so the list is probed rather
 /// than assumed.
 pub fn hardware_encoders() -> Vec<String> {
-    let Ok(out) = Command::new("ffmpeg").args(["-hide_banner", "-encoders"]).output() else {
+    let Ok(out) = Command::new("ffmpeg")
+        .args(["-hide_banner", "-encoders"])
+        .output()
+    else {
         return Vec::new();
     };
     let text = String::from_utf8_lossy(&out.stdout);
-    ["h264_nvenc", "h264_vaapi", "h264_qsv", "hevc_nvenc", "hevc_vaapi"]
-        .into_iter()
-        .filter(|e| text.contains(e))
-        .map(str::to_string)
-        .collect()
+    [
+        "h264_nvenc",
+        "h264_vaapi",
+        "h264_qsv",
+        "hevc_nvenc",
+        "hevc_vaapi",
+    ]
+    .into_iter()
+    .filter(|e| text.contains(e))
+    .map(str::to_string)
+    .collect()
 }
 
 /// Render profiles that use the GPU, appended only when the encoder exists.
@@ -1690,13 +2083,21 @@ pub fn analyse_stabilisation(source: &str, cache_dir: &Path) -> Result<String> {
         .arg(&src)
         .args([
             "-vf",
-            &format!("vidstabdetect=result='{}':shakiness=5:accuracy=15",
-                     escape_filter_path(&trf.to_string_lossy())),
-            "-f", "null", "-",
+            &format!(
+                "vidstabdetect=result='{}':shakiness=5:accuracy=15",
+                escape_filter_path(&trf.to_string_lossy())
+            ),
+            "-f",
+            "null",
+            "-",
         ])
         .output()
         .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound { Error::NoFfmpeg } else { Error::Io(e) }
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::NoFfmpeg
+            } else {
+                Error::Io(e)
+            }
         })?;
 
     if !out.status.success() {
@@ -1724,11 +2125,17 @@ pub fn freeze_frame(source: &str, at: f64, cache_dir: &Path) -> Result<String> {
         .arg(&path)
         .status()
         .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound { Error::NoFfmpeg } else { Error::Io(e) }
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::NoFfmpeg
+            } else {
+                Error::Io(e)
+            }
         })?;
 
     if !status.success() {
-        return Err(Error::Render("could not extract a frame at that position".into()));
+        return Err(Error::Render(
+            "could not extract a frame at that position".into(),
+        ));
     }
     Ok(path.to_string_lossy().to_string())
 }
@@ -1748,7 +2155,9 @@ pub fn render_zone(
     }
     let sliced = slice(project, start, end);
     if sliced.clip_count() == 0 {
-        return Err(Error::Invalid("nothing on the timeline in that zone".into()));
+        return Err(Error::Invalid(
+            "nothing on the timeline in that zone".into(),
+        ));
     }
     render(&sliced, profile, output)
 }
@@ -1756,34 +2165,70 @@ pub fn render_zone(
 pub fn render_profiles() -> Vec<RenderProfile> {
     vec![
         RenderProfile {
-            id: "mp4-h264".into(), label: "MP4 · H.264 · high quality".into(),
-            container: "mp4".into(), video_codec: "libx264".into(), audio_codec: "aac".into(),
-            crf: Some(18), video_bitrate: None, audio_bitrate: "192k".into(), preset: "slow".into(),
+            id: "mp4-h264".into(),
+            label: "MP4 · H.264 · high quality".into(),
+            container: "mp4".into(),
+            video_codec: "libx264".into(),
+            audio_codec: "aac".into(),
+            crf: Some(18),
+            video_bitrate: None,
+            audio_bitrate: "192k".into(),
+            preset: "slow".into(),
         },
         RenderProfile {
-            id: "mp4-h264-fast".into(), label: "MP4 · H.264 · fast draft".into(),
-            container: "mp4".into(), video_codec: "libx264".into(), audio_codec: "aac".into(),
-            crf: Some(26), video_bitrate: None, audio_bitrate: "128k".into(), preset: "veryfast".into(),
+            id: "mp4-h264-fast".into(),
+            label: "MP4 · H.264 · fast draft".into(),
+            container: "mp4".into(),
+            video_codec: "libx264".into(),
+            audio_codec: "aac".into(),
+            crf: Some(26),
+            video_bitrate: None,
+            audio_bitrate: "128k".into(),
+            preset: "veryfast".into(),
         },
         RenderProfile {
-            id: "mp4-h265".into(), label: "MP4 · H.265 · smaller file".into(),
-            container: "mp4".into(), video_codec: "libx265".into(), audio_codec: "aac".into(),
-            crf: Some(24), video_bitrate: None, audio_bitrate: "192k".into(), preset: "medium".into(),
+            id: "mp4-h265".into(),
+            label: "MP4 · H.265 · smaller file".into(),
+            container: "mp4".into(),
+            video_codec: "libx265".into(),
+            audio_codec: "aac".into(),
+            crf: Some(24),
+            video_bitrate: None,
+            audio_bitrate: "192k".into(),
+            preset: "medium".into(),
         },
         RenderProfile {
-            id: "webm-vp9".into(), label: "WebM · VP9 · for the web".into(),
-            container: "webm".into(), video_codec: "libvpx-vp9".into(), audio_codec: "libopus".into(),
-            crf: Some(31), video_bitrate: None, audio_bitrate: "128k".into(), preset: "good".into(),
+            id: "webm-vp9".into(),
+            label: "WebM · VP9 · for the web".into(),
+            container: "webm".into(),
+            video_codec: "libvpx-vp9".into(),
+            audio_codec: "libopus".into(),
+            crf: Some(31),
+            video_bitrate: None,
+            audio_bitrate: "128k".into(),
+            preset: "good".into(),
         },
         RenderProfile {
-            id: "mov-prores".into(), label: "MOV · ProRes 422 · for editing on".into(),
-            container: "mov".into(), video_codec: "prores_ks".into(), audio_codec: "pcm_s16le".into(),
-            crf: None, video_bitrate: None, audio_bitrate: "1536k".into(), preset: "medium".into(),
+            id: "mov-prores".into(),
+            label: "MOV · ProRes 422 · for editing on".into(),
+            container: "mov".into(),
+            video_codec: "prores_ks".into(),
+            audio_codec: "pcm_s16le".into(),
+            crf: None,
+            video_bitrate: None,
+            audio_bitrate: "1536k".into(),
+            preset: "medium".into(),
         },
         RenderProfile {
-            id: "mp3-audio".into(), label: "MP3 · audio only".into(),
-            container: "mp3".into(), video_codec: "none".into(), audio_codec: "libmp3lame".into(),
-            crf: None, video_bitrate: None, audio_bitrate: "320k".into(), preset: "medium".into(),
+            id: "mp3-audio".into(),
+            label: "MP3 · audio only".into(),
+            container: "mp3".into(),
+            video_codec: "none".into(),
+            audio_codec: "libmp3lame".into(),
+            crf: None,
+            video_bitrate: None,
+            audio_bitrate: "320k".into(),
+            preset: "medium".into(),
         },
     ]
 }
@@ -1819,8 +2264,16 @@ fn source_has_audio(path: &Path) -> bool {
     }
 
     let has = Command::new("ffprobe")
-        .args(["-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
-               "-of", "csv=p=0"])
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+        ])
         .arg(path)
         .output()
         .map(|o| !String::from_utf8_lossy(&o.stdout).trim().is_empty())
@@ -1834,7 +2287,9 @@ fn source_has_audio(path: &Path) -> bool {
 
 fn canonical_source(path: &str) -> Result<PathBuf> {
     let p = Path::new(path);
-    let c = p.canonicalize().map_err(|_| Error::MissingSource(path.to_string()))?;
+    let c = p
+        .canonicalize()
+        .map_err(|_| Error::MissingSource(path.to_string()))?;
     if !c.is_file() {
         return Err(Error::MissingSource(path.to_string()));
     }
@@ -1863,10 +2318,16 @@ fn build_input(clip: &Clip, project: &Project, index: usize, src_len: f64) -> Re
         }
         Source::Color { color } => Ok(Input {
             args: vec![
-                "-f".into(), "lavfi".into(), "-i".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
                 format!(
                     "color=c={}:s={}x{}:r={}:d={:.4}",
-                    sanitise_color(color), project.width, project.height, project.fps, dur
+                    sanitise_color(color),
+                    project.width,
+                    project.height,
+                    project.fps,
+                    dur
                 ),
             ],
             index,
@@ -1881,10 +2342,14 @@ fn build_input(clip: &Clip, project: &Project, index: usize, src_len: f64) -> Re
             let src = canonical_source(path)?;
             Ok(Input {
                 args: vec![
-                    "-loop".into(), "1".into(),
-                    "-framerate".into(), project.fps.to_string(),
-                    "-t".into(), format!("{dur:.4}"),
-                    "-i".into(), src.to_string_lossy().to_string(),
+                    "-loop".into(),
+                    "1".into(),
+                    "-framerate".into(),
+                    project.fps.to_string(),
+                    "-t".into(),
+                    format!("{dur:.4}"),
+                    "-i".into(),
+                    src.to_string_lossy().to_string(),
                 ],
                 index,
                 has_audio: false,
@@ -1893,18 +2358,30 @@ fn build_input(clip: &Clip, project: &Project, index: usize, src_len: f64) -> Re
         // An adjustment layer is not decoded; it is a compositing instruction.
         Source::Adjustment => Ok(Input {
             args: vec![
-                "-f".into(), "lavfi".into(), "-i".into(),
-                format!("color=c=black@0:s=2x2:r={}:d={:.4}", project.fps, dur.max(0.04)),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                format!(
+                    "color=c=black@0:s=2x2:r={}:d={:.4}",
+                    project.fps,
+                    dur.max(0.04)
+                ),
             ],
             index,
             has_audio: false,
         }),
         Source::Title { background, .. } => Ok(Input {
             args: vec![
-                "-f".into(), "lavfi".into(), "-i".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
                 format!(
                     "color=c={}:s={}x{}:r={}:d={:.4}",
-                    sanitise_color(background), project.width, project.height, project.fps, dur
+                    sanitise_color(background),
+                    project.width,
+                    project.height,
+                    project.fps,
+                    dur
                 ),
             ],
             index,
@@ -1939,7 +2416,8 @@ pub fn render_args(
                     if same {
                         return Err(Error::Invalid(format!(
                             "the output file is also a source clip ({}). Choose a different name.",
-                            src.file_name().map(|n| n.to_string_lossy().to_string())
+                            src.file_name()
+                                .map(|n| n.to_string_lossy().to_string())
                                 .unwrap_or_else(|| src.to_string_lossy().to_string())
                         )));
                     }
@@ -1991,7 +2469,12 @@ pub fn render_args(
             for seg in clip.segments() {
                 let input = build_input(clip, project, index, seg.src_end - seg.src_start)?;
                 index += 1;
-                pieces.push(Piece { input, clip, track, seg });
+                pieces.push(Piece {
+                    input,
+                    clip,
+                    track,
+                    seg,
+                });
             }
         }
     }
@@ -2033,7 +2516,10 @@ pub fn render_args(
             let mut chain: Vec<String> = Vec::new();
 
             if !clip.is_generated() {
-                chain.push(format!("trim=start={:.4}:end={:.4}", seg.src_start, seg.src_end));
+                chain.push(format!(
+                    "trim=start={:.4}:end={:.4}",
+                    seg.src_start, seg.src_end
+                ));
             }
             chain.push("setpts=PTS-STARTPTS".into());
             if clip.reverse {
@@ -2050,7 +2536,8 @@ pub fn render_args(
 
             chain.push(format!(
                 "scale={w}:{h}:force_original_aspect_ratio=decrease",
-                w = project.width, h = project.height
+                w = project.width,
+                h = project.height
             ));
             // With motion the layer keeps its own box and the overlay places
             // it; padding to the full frame first would make position, scale
@@ -2058,16 +2545,22 @@ pub fn render_args(
             if clip.motion.is_identity() {
                 chain.push(format!(
                     "pad={w}:{h}:(ow-iw)/2:(oh-ih)/2",
-                    w = project.width, h = project.height
+                    w = project.width,
+                    h = project.height
                 ));
             }
             chain.push("setsar=1".into());
             chain.push(format!("fps={}", project.fps));
 
-            if let Source::Title { text, size, color, .. } = &clip.source {
+            if let Source::Title {
+                text, size, color, ..
+            } = &clip.source
+            {
                 chain.push(format!(
                     "drawtext=text='{}':fontsize={:.0}:fontcolor={}:x=(w-text_w)/2:y=(h-text_h)/2",
-                    escape_drawtext(text), size, sanitise_color(color)
+                    escape_drawtext(text),
+                    size,
+                    sanitise_color(color)
                 ));
             }
 
@@ -2146,7 +2639,11 @@ pub fn render_args(
                 start: seg_start,
                 end: seg_start + seg.out_len,
                 pos: effective.overlay_position(),
-                blend: if clip.blend == BlendMode::Normal { track.blend } else { clip.blend },
+                blend: if clip.blend == BlendMode::Normal {
+                    track.blend
+                } else {
+                    clip.blend
+                },
             });
         }
 
@@ -2156,7 +2653,10 @@ pub fn render_args(
         let audible = solo_ok && !track.muted && !clip.muted && p.input.has_audio;
         if audible {
             let mut chain: Vec<String> = Vec::new();
-            chain.push(format!("atrim=start={:.4}:end={:.4}", seg.src_start, seg.src_end));
+            chain.push(format!(
+                "atrim=start={:.4}:end={:.4}",
+                seg.src_start, seg.src_end
+            ));
             chain.push("asetpts=PTS-STARTPTS".into());
             if clip.reverse {
                 chain.push("areverse".into());
@@ -2235,13 +2735,21 @@ pub fn render_args(
         filters.push(format!(
             "color=c={}:s={}x{}:r={}:d={:.4},format=yuva420p[base]",
             sanitise_color(&project.background),
-            project.width, project.height, project.fps, total.max(0.04)
+            project.width,
+            project.height,
+            project.fps,
+            total.max(0.04)
         ));
         let mut current = "base".to_string();
         for (n, op) in video_labels.iter().enumerate() {
             let out = format!("comp{n}");
             let (label, start, end, pos, blend) = match op {
-                Composite::Adjust { filters: adjust_filters, commands, start, end } => {
+                Composite::Adjust {
+                    filters: adjust_filters,
+                    commands,
+                    start,
+                    end,
+                } => {
                     // Applied to the composite so far, gated to its own span so
                     // it grades only the stretch of timeline it covers.
                     let gated: Vec<String> = adjust_filters
@@ -2257,7 +2765,13 @@ pub fn render_args(
                     current = out;
                     continue;
                 }
-                Composite::Layer { label, start, end, pos, blend } => (label, start, end, pos, blend),
+                Composite::Layer {
+                    label,
+                    start,
+                    end,
+                    pos,
+                    blend,
+                } => (label, start, end, pos, blend),
             };
             // `enable` keeps a clip from painting outside its own span, and
             // shortest=0 keeps the base canvas defining the output length.
@@ -2275,7 +2789,10 @@ enable='between(t,{start:.4},{end:.4})'[{out}]"
                 let (x, y) = pos;
                 filters.push(format!(
                     "color=c=black@0:s={w}x{h}:r={fps}:d={dur:.4},format=yuva420p[bbg{n}]",
-                    w = project.width, h = project.height, fps = project.fps, dur = total.max(0.04)
+                    w = project.width,
+                    h = project.height,
+                    fps = project.fps,
+                    dur = total.max(0.04)
                 ));
                 filters.push(format!(
                     "[bbg{n}][{label}]overlay=x='{x}':y='{y}':eof_action=pass:shortest=0[{placed}]"
@@ -2332,13 +2849,13 @@ enable='between(t,{:.4},{:.4})'[{out}]",
             // Group the per-clip labels by the track they came from.
             let mut by_track: std::collections::BTreeMap<String, Vec<String>> = Default::default();
             for (label, track_id) in &audio_owner {
-                by_track.entry(track_id.clone()).or_default().push(label.clone());
+                by_track
+                    .entry(track_id.clone())
+                    .or_default()
+                    .push(label.clone());
             }
 
-            let sum = |id: &str,
-                       parts: &[String],
-                       filters: &mut Vec<String>|
-             -> Option<String> {
+            let sum = |id: &str, parts: &[String], filters: &mut Vec<String>| -> Option<String> {
                 if parts.is_empty() {
                     return None;
                 }
@@ -2356,13 +2873,19 @@ enable='between(t,{:.4},{:.4})'[{out}]",
 
             let mut consumed: std::collections::BTreeSet<String> = Default::default();
             for (track, key_id) in &ducking {
-                let Some(own) = by_track.get(&track.id) else { continue };
-                let Some(key_parts) = by_track.get(key_id) else { continue };
+                let Some(own) = by_track.get(&track.id) else {
+                    continue;
+                };
+                let Some(key_parts) = by_track.get(key_id) else {
+                    continue;
+                };
                 if own.is_empty() || key_parts.is_empty() {
                     continue;
                 }
 
-                let Some(own_sum) = sum(&track.id, own, &mut filters) else { continue };
+                let Some(own_sum) = sum(&track.id, own, &mut filters) else {
+                    continue;
+                };
                 // The key is copied, because it is also heard in the mix.
                 let key_copy = format!("key_{}", track.id);
                 let Some(key_sum) = sum(&format!("k{}", track.id), key_parts, &mut filters) else {
@@ -2402,7 +2925,9 @@ attack={:.1}:release={:.1}[{out}]",
         None
     } else if audio_labels.len() == 1 {
         let only = &audio_labels[0];
-        filters.push(format!("[{only}]apad,atrim=0:{total:.4},asetpts=PTS-STARTPTS[aout]"));
+        filters.push(format!(
+            "[{only}]apad,atrim=0:{total:.4},asetpts=PTS-STARTPTS[aout]"
+        ));
         Some("aout".to_string())
     } else {
         let joined: String = audio_labels.iter().map(|l| format!("[{l}]")).collect();
@@ -2414,7 +2939,9 @@ attack={:.1}:release={:.1}[{out}]",
     };
 
     if final_video.is_none() && final_audio.is_none() {
-        return Err(Error::Invalid("nothing to render — every track is muted or hidden".into()));
+        return Err(Error::Invalid(
+            "nothing to render — every track is muted or hidden".into(),
+        ));
     }
 
     args.push("-filter_complex".into());
@@ -2429,7 +2956,7 @@ attack={:.1}:release={:.1}[{out}]",
         args.push(format!("[{a}]"));
     }
 
-    if let Some(_) = &final_video {
+    if final_video.is_some() {
         args.push("-c:v".into());
         args.push(profile.video_codec.clone());
         if profile.video_codec.starts_with("libx26") {
@@ -2523,11 +3050,16 @@ struct Pipeline {
 
 impl Pipeline {
     fn new() -> Pipeline {
-        Pipeline { chains: vec![Vec::new()] }
+        Pipeline {
+            chains: vec![Vec::new()],
+        }
     }
 
     fn push(&mut self, filter: String) {
-        self.chains.last_mut().expect("always at least one chain").push(filter);
+        self.chains
+            .last_mut()
+            .expect("always at least one chain")
+            .push(filter);
     }
 
     fn extend(&mut self, filters: impl IntoIterator<Item = String>) {
@@ -2553,7 +3085,11 @@ impl Pipeline {
         let mut out = Vec::with_capacity(chains.len());
         let mut current = input.to_string();
         for (i, chain) in chains.into_iter().enumerate() {
-            let label = if i == last { output.to_string() } else { format!("{tag}s{i}") };
+            let label = if i == last {
+                output.to_string()
+            } else {
+                format!("{tag}s{i}")
+            };
             out.push(format!("[{current}]{}[{label}]", chain.join(",")));
             current = label;
         }
@@ -2645,7 +3181,9 @@ pub fn autosaves(item_id: &str, dir: &Path) -> Vec<String> {
         .unwrap_or_default();
     mine.sort();
     mine.reverse();
-    mine.into_iter().map(|p| p.to_string_lossy().to_string()).collect()
+    mine.into_iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect()
 }
 
 /// Read a snapshot back.
@@ -2664,12 +3202,19 @@ pub fn detect_scenes(source: &str, threshold: f64) -> Result<Vec<f64>> {
         .args(["-hide_banner", "-i"])
         .arg(&src)
         .args([
-            "-vf", &format!("select='gt(scene,{threshold:.3})',metadata=print:file=-"),
-            "-f", "null", "-",
+            "-vf",
+            &format!("select='gt(scene,{threshold:.3})',metadata=print:file=-"),
+            "-f",
+            "null",
+            "-",
         ])
         .output()
         .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound { Error::NoFfmpeg } else { Error::Io(e) }
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::NoFfmpeg
+            } else {
+                Error::Io(e)
+            }
         })?;
 
     // metadata=print writes "pts_time:12.345" lines to the file we set to stdout.
@@ -2706,7 +3251,11 @@ pub fn to_edl(project: &Project, title: &str) -> String {
     };
 
     let mut clips: Vec<&Clip> = track.clips.iter().collect();
-    clips.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    clips.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     for (i, clip) in clips.iter().enumerate() {
         let name = match &clip.source {
@@ -2752,7 +3301,11 @@ pub fn to_otio(project: &Project, name: &str) -> String {
     for track in &project.tracks {
         let mut children = Vec::new();
         let mut clips: Vec<&Clip> = track.clips.iter().collect();
-        clips.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+        clips.sort_by(|a, b| {
+            a.start
+                .partial_cmp(&b.start)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // OTIO tracks are contiguous, so gaps are explicit Gap items.
         let mut cursor = 0.0;
@@ -2804,7 +3357,11 @@ pub fn to_otio(project: &Project, name: &str) -> String {
 /// Serialise the subtitle list as SRT.
 pub fn to_srt(subs: &[Subtitle]) -> String {
     let mut ordered: Vec<&Subtitle> = subs.iter().filter(|s| s.end > s.start).collect();
-    ordered.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    ordered.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut out = String::new();
     for (i, sub) in ordered.iter().enumerate() {
@@ -2834,15 +3391,23 @@ pub fn from_srt(text: &str) -> Vec<Subtitle> {
     let normalised = text.replace("\r\n", "\n").replace('\r', "\n");
     let mut out = Vec::new();
     for block in normalised.split("\n\n") {
-        let lines: Vec<&str> = block.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+        let lines: Vec<&str> = block
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect();
         if lines.is_empty() {
             continue;
         }
         // An optional index line precedes the timing line.
         let timing_at = lines.iter().position(|l| l.contains("-->"));
         let Some(ti) = timing_at else { continue };
-        let Some((a, b)) = lines[ti].split_once("-->") else { continue };
-        let (Some(start), Some(end)) = (parse_srt_time(a), parse_srt_time(b)) else { continue };
+        let Some((a, b)) = lines[ti].split_once("-->") else {
+            continue;
+        };
+        let (Some(start), Some(end)) = (parse_srt_time(a), parse_srt_time(b)) else {
+            continue;
+        };
         if end <= start {
             continue;
         }
@@ -2864,7 +3429,11 @@ fn parse_srt_time(s: &str) -> Option<f64> {
     let s = s.trim().replace(',', ".");
     let parts: Vec<&str> = s.split(':').collect();
     let (h, m, rest) = match parts.len() {
-        3 => (parts[0].parse::<f64>().ok()?, parts[1].parse::<f64>().ok()?, parts[2]),
+        3 => (
+            parts[0].parse::<f64>().ok()?,
+            parts[1].parse::<f64>().ok()?,
+            parts[2],
+        ),
         2 => (0.0, parts[0].parse::<f64>().ok()?, parts[1]),
         _ => return None,
     };
@@ -2917,11 +3486,9 @@ pub fn run_queue(jobs: &[RenderJob], cache_dir: &Path) -> Vec<JobResult> {
     jobs.iter()
         .map(|job| {
             let started = std::time::Instant::now();
-            let outcome = flatten_nested(&job.project, cache_dir).and_then(|flat| {
-                match job.zone {
-                    Some((a, b)) => render_zone(&flat, &job.profile, Path::new(&job.output), a, b),
-                    None => render(&flat, &job.profile, Path::new(&job.output)),
-                }
+            let outcome = flatten_nested(&job.project, cache_dir).and_then(|flat| match job.zone {
+                Some((a, b)) => render_zone(&flat, &job.profile, Path::new(&job.output), a, b),
+                None => render(&flat, &job.profile, Path::new(&job.output)),
             });
             let seconds = started.elapsed().as_secs_f64();
             match outcome {
@@ -2952,7 +3519,13 @@ pub fn save_preset(profile: &RenderProfile, dir: &Path) -> Result<String> {
     let safe: String = profile
         .id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     if safe.is_empty() {
         return Err(Error::Invalid("a preset needs a name".into()));
@@ -2963,7 +3536,9 @@ pub fn save_preset(profile: &RenderProfile, dir: &Path) -> Result<String> {
 }
 
 pub fn load_presets(dir: &Path) -> Vec<RenderProfile> {
-    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
     let mut out: Vec<RenderProfile> = entries
         .flatten()
         .map(|e| e.path())
@@ -2978,7 +3553,13 @@ pub fn load_presets(dir: &Path) -> Vec<RenderProfile> {
 pub fn delete_preset(id: &str, dir: &Path) -> Result<()> {
     let safe: String = id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let path = dir.join(format!("{safe}.json"));
     std::fs::remove_file(path).map_err(Error::Io)
@@ -3001,14 +3582,17 @@ pub fn apply_transitions(project: &Project) -> Project {
         // Work back to front so shifting a clip cannot disturb one not yet seen.
         let mut ordered: Vec<usize> = (0..track.clips.len()).collect();
         ordered.sort_by(|a, b| {
-            track.clips[*a].start
+            track.clips[*a]
+                .start
                 .partial_cmp(&track.clips[*b].start)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         for w in ordered.windows(2) {
             let (prev_i, next_i) = (w[0], w[1]);
-            let Some(t) = track.clips[next_i].transition_in.clone() else { continue };
+            let Some(t) = track.clips[next_i].transition_in.clone() else {
+                continue;
+            };
 
             let prev_end = track.clips[prev_i].end();
             let next_start = track.clips[next_i].start;
@@ -3018,16 +3602,28 @@ pub fn apply_transitions(project: &Project) -> Project {
             }
 
             let incoming = &track.clips[next_i];
-            let speed = if incoming.speed.is_animated() { 1.0 } else { incoming.speed.first().abs().max(0.01) };
+            let speed = if incoming.speed.is_animated() {
+                1.0
+            } else {
+                incoming.speed.first().abs().max(0.01)
+            };
             // Handles available at the incoming head, in timeline seconds.
             let head_handle = incoming.in_point / speed;
 
             let outgoing = &track.clips[prev_i];
-            let out_speed = if outgoing.speed.is_animated() { 1.0 } else { outgoing.speed.first().abs().max(0.01) };
+            let out_speed = if outgoing.speed.is_animated() {
+                1.0
+            } else {
+                outgoing.speed.first().abs().max(0.01)
+            };
             // Handles available at the outgoing tail is unknown without probing
             // the source, so the tail is extended only as far as the incoming
             // clip can be pulled back, which is always safe.
-            let overlap = t.duration.min(head_handle).min(outgoing.duration()).max(0.0);
+            let overlap = t
+                .duration
+                .min(head_handle)
+                .min(outgoing.duration())
+                .max(0.0);
             if overlap <= 0.001 {
                 // No handles: leave it as a fade up from the background and say
                 // so through the shortened duration.
@@ -3039,7 +3635,10 @@ pub fn apply_transitions(project: &Project) -> Project {
                 let c = &mut track.clips[next_i];
                 c.start -= overlap;
                 c.in_point = (c.in_point - overlap * speed).max(0.0);
-                c.transition_in = Some(Transition { kind: t.kind, duration: overlap });
+                c.transition_in = Some(Transition {
+                    kind: t.kind,
+                    duration: overlap,
+                });
             }
             // Extend the outgoing tail so it plays under the dissolve.
             {
@@ -3075,11 +3674,13 @@ pub fn slice(project: &Project, start: f64, end: f64) -> Project {
                 sliced.start = 0.0;
                 // A ramp indexed from the old in point no longer lines up.
                 if clip.speed.is_animated() {
-                    sliced.speed = Param::Static(clip.segments()
-                        .iter()
-                        .find(|s| s.out_offset + s.out_len > skip)
-                        .map(|s| s.speed)
-                        .unwrap_or(1.0));
+                    sliced.speed = Param::Static(
+                        clip.segments()
+                            .iter()
+                            .find(|s| s.out_offset + s.out_len > skip)
+                            .map(|s| s.speed)
+                            .unwrap_or(1.0),
+                    );
                 }
             } else {
                 sliced.start = c_start - start;
@@ -3088,7 +3689,11 @@ pub fn slice(project: &Project, start: f64, end: f64) -> Project {
             // Trim the tail if the clip runs past the end of the range.
             if c_end > end {
                 let keep = end - c_start.max(start);
-                let from = if c_start < start { start - c_start } else { 0.0 };
+                let from = if c_start < start {
+                    start - c_start
+                } else {
+                    0.0
+                };
                 sliced.out_point = clip.source_time_at(from + keep);
             }
 
@@ -3157,7 +3762,9 @@ pub fn render_preview(
 
     let mut sliced = slice(project, start, end);
     if sliced.clip_count() == 0 {
-        return Err(Error::Invalid("nothing on the timeline in that range".into()));
+        return Err(Error::Invalid(
+            "nothing on the timeline in that range".into(),
+        ));
     }
 
     // H.264 needs even dimensions, and the scale must not collapse to nothing.
@@ -3195,7 +3802,9 @@ pub fn clear_previews(cache_dir: &Path) -> Result<usize> {
     let mut n = 0;
     for entry in entries.flatten() {
         let p = entry.path();
-        if p.extension().and_then(|e| e.to_str()) == Some("webm") && std::fs::remove_file(&p).is_ok() {
+        if p.extension().and_then(|e| e.to_str()) == Some("webm")
+            && std::fs::remove_file(&p).is_ok()
+        {
             n += 1;
         }
     }
@@ -3208,7 +3817,13 @@ pub fn flatten_nested(project: &Project, cache_dir: &Path) -> Result<Project> {
     let mut out = project.clone();
     for track in &mut out.tracks {
         for clip in &mut track.clips {
-            let Source::Nested { name, project: inner } = clip.source.clone() else { continue };
+            let Source::Nested {
+                name,
+                project: inner,
+            } = clip.source.clone()
+            else {
+                continue;
+            };
             // Recurse first: a sequence may itself contain sequences.
             let flat_inner = flatten_nested(&inner, cache_dir)?;
             if flat_inner.clip_count() == 0 {
@@ -3265,7 +3880,11 @@ pub fn render(project: &Project, profile: &RenderProfile, output: &Path) -> Resu
     // may have to travel as a file rather than an argument.
     let (args, graph_file) = spill_graph(args)?;
     let out = Command::new("ffmpeg").args(&args).output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound { Error::NoFfmpeg } else { Error::Io(e) }
+        if e.kind() == std::io::ErrorKind::NotFound {
+            Error::NoFfmpeg
+        } else {
+            Error::Io(e)
+        }
     })?;
     if let Some(path) = &srt_file {
         let _ = std::fs::remove_file(path);
@@ -3308,7 +3927,9 @@ mod tests {
     }
 
     pub(crate) fn scratch(name: &str) -> PathBuf {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("test-scratch");
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test-scratch");
         let _ = std::fs::create_dir_all(&dir);
         dir.join(name)
     }
@@ -3325,10 +3946,26 @@ mod tests {
             return p;
         }
         let status = Command::new("ffmpeg")
-            .args(["-y", "-v", "error",
-                   "-f", "lavfi", "-i", "testsrc=size=32x32:rate=10:duration=0.2",
-                   "-f", "lavfi", "-i", "sine=frequency=440:duration=0.2",
-                   "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=32x32:rate=10:duration=0.2",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=0.2",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+            ])
             .arg(&p)
             .status();
         match status {
@@ -3342,10 +3979,12 @@ mod tests {
         }
     }
 
-    fn media_clip(id: &str, path: &PathBuf, start: f64, a: f64, b: f64) -> Clip {
+    fn media_clip(id: &str, path: &Path, start: f64, a: f64, b: f64) -> Clip {
         Clip {
             id: id.into(),
-            source: Source::Media { path: path.to_string_lossy().to_string() },
+            source: Source::Media {
+                path: path.to_string_lossy().to_string(),
+            },
             start,
             in_point: a,
             out_point: b,
@@ -3364,10 +4003,23 @@ mod tests {
 
     fn video_track(clips: Vec<Clip>) -> Track {
         Track {
-            id: "t1".into(), name: "V1".into(), kind: TrackKind::Video,
-            clips, muted: false, hidden: false, locked: false, solo: false, volume: 1.0,
-            opacity: 1.0, blend: BlendMode::Normal, targeted: false, duck_under: None,
-            duck_threshold: 0.05, duck_ratio: 8.0, duck_attack: 20.0, duck_release: 300.0,
+            id: "t1".into(),
+            name: "V1".into(),
+            kind: TrackKind::Video,
+            clips,
+            muted: false,
+            hidden: false,
+            locked: false,
+            solo: false,
+            volume: 1.0,
+            opacity: 1.0,
+            blend: BlendMode::Normal,
+            targeted: false,
+            duck_under: None,
+            duck_threshold: 0.05,
+            duck_ratio: 8.0,
+            duck_attack: 20.0,
+            duck_release: 300.0,
         }
     }
 
@@ -3397,7 +4049,9 @@ mod tests {
             tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 4.0)]), t2],
             ..Default::default()
         };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(joined.contains("[v0]"), "first clip missing");
         assert!(joined.contains("[v1]"), "second clip missing");
         assert_eq!(joined.matches("overlay=").count(), 2, "both must composite");
@@ -3408,9 +4062,14 @@ mod tests {
         let s = temp_source("c");
         let mut c = media_clip("1", &s, 0.0, 0.0, 10.0);
         c.speed = Param::Static(2.0);
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
         assert_eq!(p.duration(), 5.0, "double speed halves the timeline length");
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(joined.contains("setpts=PTS/2"), "video speed missing");
         assert!(joined.contains("atempo=2"), "audio speed missing");
     }
@@ -3437,8 +4096,13 @@ mod tests {
             tracks: vec![video_track(vec![media_clip("1", &s, 7.5, 0.0, 2.0)])],
             ..Default::default()
         };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(joined.contains("setpts=PTS+7.5"), "video not delayed: {joined}");
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            joined.contains("setpts=PTS+7.5"),
+            "video not delayed: {joined}"
+        );
         assert!(joined.contains("adelay=7500"), "audio not delayed");
     }
 
@@ -3447,8 +4111,13 @@ mod tests {
         let s = temp_source("e");
         let mut t = video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)]);
         t.hidden = true;
-        let p = Project { tracks: vec![t], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![t],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!joined.contains("[v0]"), "hidden track still rendered");
     }
 
@@ -3457,8 +4126,13 @@ mod tests {
         let s = temp_source("f");
         let mut t = video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)]);
         t.muted = true;
-        let p = Project { tracks: vec![t], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![t],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!joined.contains("[a0]"), "muted track still had audio");
     }
 
@@ -3471,9 +4145,17 @@ mod tests {
         t2.id = "t2".into();
         t2.solo = true;
 
-        let p = Project { tracks: vec![t1, t2], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(!joined.contains("[a0]"), "non-soloed track should be silent");
+        let p = Project {
+            tracks: vec![t1, t2],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            !joined.contains("[a0]"),
+            "non-soloed track should be silent"
+        );
         assert!(joined.contains("[a1]"), "soloed track should be audible");
         // Video is unaffected by solo.
         assert!(joined.contains("[v0]") && joined.contains("[v1]"));
@@ -3486,8 +4168,13 @@ mod tests {
         t1.id = "t1".into();
         let mut t2 = video_track(vec![media_clip("2", &s, 0.0, 0.0, 2.0)]);
         t2.id = "t2".into();
-        let p = Project { tracks: vec![t1, t2], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![t1, t2],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(joined.contains("[a0]") && joined.contains("[a1]"));
     }
 
@@ -3496,21 +4183,40 @@ mod tests {
         let s = temp_source("tvol");
         let mut t = video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)]);
         t.volume = 0.25;
-        let p = Project { tracks: vec![t], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(joined.contains("volume=0.2500"), "track volume not applied: {joined}");
+        let p = Project {
+            tracks: vec![t],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            joined.contains("volume=0.2500"),
+            "track volume not applied: {joined}"
+        );
     }
 
     #[test]
     fn keyframes_compile_to_an_animated_expression() {
         let p = Param::Animated {
             keyframes: vec![
-                Keyframe { time: 0.0, value: 0.0, easing: Easing::Linear },
-                Keyframe { time: 2.0, value: 1.0, easing: Easing::Linear },
+                Keyframe {
+                    time: 0.0,
+                    value: 0.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 2.0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
             ],
         };
         let expr = p.to_expr();
-        assert!(expr.contains("if(lt(t,"), "not a piecewise expression: {expr}");
+        assert!(
+            expr.contains("if(lt(t,"),
+            "not a piecewise expression: {expr}"
+        );
         // Sampled values must match the interpolation.
         assert!((p.value_at(0.0) - 0.0).abs() < 1e-9);
         assert!((p.value_at(1.0) - 0.5).abs() < 1e-9);
@@ -3524,8 +4230,16 @@ mod tests {
     fn easing_curves_differ_from_linear_at_the_midpoint() {
         let mk = |e: Easing| Param::Animated {
             keyframes: vec![
-                Keyframe { time: 0.0, value: 0.0, easing: e },
-                Keyframe { time: 1.0, value: 1.0, easing: Easing::Linear },
+                Keyframe {
+                    time: 0.0,
+                    value: 0.0,
+                    easing: e,
+                },
+                Keyframe {
+                    time: 1.0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
             ],
         };
         assert!((mk(Easing::Linear).value_at(0.5) - 0.5).abs() < 1e-9);
@@ -3541,17 +4255,33 @@ mod tests {
         c.effects.push(Effect::Color {
             brightness: Param::Animated {
                 keyframes: vec![
-                    Keyframe { time: 0.0, value: -1.0, easing: Easing::Linear },
-                    Keyframe { time: 4.0, value: 0.0, easing: Easing::Linear },
+                    Keyframe {
+                        time: 0.0,
+                        value: -1.0,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 4.0,
+                        value: 0.0,
+                        easing: Easing::Linear,
+                    },
                 ],
             },
             contrast: Param::Static(1.0),
             saturation: Param::Static(1.0),
             gamma: Param::Static(1.0),
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(joined.contains("eval=frame"), "static evaluation would freeze the animation");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            joined.contains("eval=frame"),
+            "static evaluation would freeze the animation"
+        );
         assert!(joined.contains("eq=brightness="));
     }
 
@@ -3559,9 +4289,17 @@ mod tests {
     fn fade_out_is_placed_at_the_clip_tail() {
         let s = temp_source("h");
         let mut c = media_clip("1", &s, 0.0, 0.0, 6.0);
-        c.effects.push(Effect::Fade { in_secs: 1.0, out_secs: 2.0 });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        c.effects.push(Effect::Fade {
+            in_secs: 1.0,
+            out_secs: 2.0,
+        });
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(joined.contains("fade=t=in:st=0:d=1.0000"));
         assert!(joined.contains("fade=t=out:st=4.0000:d=2.0000"), "{joined}");
     }
@@ -3572,18 +4310,34 @@ mod tests {
             tracks: vec![video_track(vec![Clip {
                 id: "t".into(),
                 source: Source::Title {
-                    text: "Odyssey".into(), background: "black".into(),
-                    size: 96.0, color: "white".into(),
+                    text: "Odyssey".into(),
+                    background: "black".into(),
+                    size: 96.0,
+                    color: "white".into(),
                 },
-                start: 0.0, in_point: 0.0, out_point: 3.0, speed: Param::Static(1.0),
-                reverse: false, gain: 1.0, muted: false, effects: vec![],
-                motion: Motion::default(), blend: BlendMode::Normal,
-            channels: vec![], preserve_pitch: true, transition_in: None,
+                start: 0.0,
+                in_point: 0.0,
+                out_point: 3.0,
+                speed: Param::Static(1.0),
+                reverse: false,
+                gain: 1.0,
+                muted: false,
+                effects: vec![],
+                motion: Motion::default(),
+                blend: BlendMode::Normal,
+                channels: vec![],
+                preserve_pitch: true,
+                transition_in: None,
             }])],
             ..Default::default()
         };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(joined.contains("lavfi"), "generated source should use lavfi");
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            joined.contains("lavfi"),
+            "generated source should use lavfi"
+        );
         assert!(joined.contains("drawtext=text='Odyssey'"));
     }
 
@@ -3594,16 +4348,29 @@ mod tests {
             tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 3.0)])],
             ..Default::default()
         };
-        let mp3 = render_profiles().into_iter().find(|p| p.id == "mp3-audio").unwrap();
-        let joined = render_args(&p, &mp3, Path::new("/tmp/o.mp3"), None).unwrap().join(" ");
-        assert!(!joined.contains("[vout]"), "audio profile should not map video");
+        let mp3 = render_profiles()
+            .into_iter()
+            .find(|p| p.id == "mp3-audio")
+            .unwrap();
+        let joined = render_args(&p, &mp3, Path::new("/tmp/o.mp3"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            !joined.contains("[vout]"),
+            "audio profile should not map video"
+        );
         assert!(joined.contains("libmp3lame"));
     }
 
     #[test]
     fn empty_project_is_rejected() {
         assert!(matches!(
-            render_args(&Project::default(), &profile(), Path::new("/tmp/o.mp4"), None),
+            render_args(
+                &Project::default(),
+                &profile(),
+                Path::new("/tmp/o.mp4"),
+                None
+            ),
             Err(Error::Empty)
         ));
     }
@@ -3613,7 +4380,9 @@ mod tests {
         let s = temp_source("j");
         let p = Project {
             tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)])],
-            width: 1921, height: 1080, ..Default::default()
+            width: 1921,
+            height: 1080,
+            ..Default::default()
         };
         assert!(render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).is_err());
     }
@@ -3623,7 +4392,10 @@ mod tests {
         let s = temp_source("k");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.speed = Param::Static(0.0);
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
         assert!(render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).is_err());
     }
 
@@ -3633,7 +4405,10 @@ mod tests {
     fn title_text_cannot_break_out_of_the_filter_string() {
         let hostile = "Title: 'quoted' , x=0:y=0";
         let escaped = escape_drawtext(hostile);
-        assert!(!escaped.contains("':"), "unescaped colon after quote: {escaped}");
+        assert!(
+            !escaped.contains("':"),
+            "unescaped colon after quote: {escaped}"
+        );
         assert!(!escaped.contains('\''), "raw quote survived: {escaped}");
         assert!(escaped.contains("\\:"), "colon not escaped: {escaped}");
     }
@@ -3654,7 +4429,10 @@ mod tests {
     #[test]
     fn hostile_filenames_stay_a_single_argument() {
         let nasty = scratch("odyssey-tl--x; rm -rf $(echo).mp4");
-        std::fs::File::create(&nasty).unwrap().write_all(b"x").unwrap();
+        std::fs::File::create(&nasty)
+            .unwrap()
+            .write_all(b"x")
+            .unwrap();
         let p = Project {
             tracks: vec![video_track(vec![media_clip("1", &nasty, 0.0, 0.0, 1.0)])],
             ..Default::default()
@@ -3672,14 +4450,32 @@ mod tests {
         let s = temp_source("kf1");
         let mut c = media_clip("1", &s, 0.0, 0.0, 4.0);
         c.effects.push(Effect::Blur {
-            sigma: Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: 0.0, easing: Easing::Linear },
-                Keyframe { time: 4.0, value: 20.0, easing: Easing::Linear },
-            ]},
+            sigma: Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: 0.0,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 4.0,
+                        value: 20.0,
+                        easing: Easing::Linear,
+                    },
+                ],
+            },
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(joined.contains("sendcmd=c='"), "no command stream: {joined}");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            joined.contains("sendcmd=c='"),
+            "no command stream: {joined}"
+        );
         assert!(joined.contains("gblur sigma"), "blur not targeted");
     }
 
@@ -3688,15 +4484,33 @@ mod tests {
         let s = temp_source("kf2");
         let mut c = media_clip("1", &s, 0.0, 0.0, 1.0);
         c.effects.push(Effect::Sharpen {
-            amount: Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: 0.0, easing: Easing::Linear },
-                Keyframe { time: 1.0, value: 3.0, easing: Easing::Linear },
-            ]},
+            amount: Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: 0.0,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 1.0,
+                        value: 3.0,
+                        easing: Easing::Linear,
+                    },
+                ],
+            },
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         // unsharp has neither expressions nor runtime options, so it is stacked.
-        assert!(joined.matches("unsharp=").count() > 1, "not stacked: {joined}");
+        assert!(
+            joined.matches("unsharp=").count() > 1,
+            "not stacked: {joined}"
+        );
         assert!(joined.contains("enable='between(t,"), "slices not gated");
     }
 
@@ -3705,36 +4519,92 @@ mod tests {
         let s = temp_source("kf3");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.effects.push(Effect::Vignette {
-            angle: Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: 0.1, easing: Easing::Linear },
-                Keyframe { time: 2.0, value: 1.2, easing: Easing::Linear },
-            ]},
+            angle: Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: 0.1,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 2.0,
+                        value: 1.2,
+                        easing: Easing::Linear,
+                    },
+                ],
+            },
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(joined.contains("vignette=a='if(lt(t,"), "not an expression: {joined}");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            joined.contains("vignette=a='if(lt(t,"),
+            "not an expression: {joined}"
+        );
     }
 
     #[test]
     fn every_effect_kind_reports_an_animation_route() {
         let all = vec![
-            Effect::Color { brightness: p_zero(), contrast: p_one(), saturation: p_one(), gamma: p_one() },
+            Effect::Color {
+                brightness: p_zero(),
+                contrast: p_one(),
+                saturation: p_one(),
+                gamma: p_one(),
+            },
             Effect::Hue { degrees: p_zero() },
             Effect::Blur { sigma: p_one() },
             Effect::Sharpen { amount: p_one() },
             Effect::Opacity { level: p_one() },
-            Effect::Fade { in_secs: 0.1, out_secs: 0.1 },
-            Effect::Crop { x: p_zero(), y: p_zero(), width: 100.0, height: 100.0 },
+            Effect::Fade {
+                in_secs: 0.1,
+                out_secs: 0.1,
+            },
+            Effect::Crop {
+                x: p_zero(),
+                y: p_zero(),
+                width: 100.0,
+                height: 100.0,
+            },
             Effect::Rotate { degrees: p_zero() },
-            Effect::Transform { scale: p_one(), x: p_zero(), y: p_zero() },
+            Effect::Transform {
+                scale: p_one(),
+                x: p_zero(),
+                y: p_zero(),
+            },
             Effect::Vignette { angle: p_zero() },
-            Effect::ChromaKey { color: "green".into(), similarity: p_point_one(), blend: p_zero() },
-            Effect::Text { content: "x".into(), size: 10.0, color: "white".into(), x: p_zero(), y: p_zero(), font: String::new() },
+            Effect::ChromaKey {
+                color: "green".into(),
+                similarity: p_point_one(),
+                blend: p_zero(),
+            },
+            Effect::Text {
+                content: "x".into(),
+                size: 10.0,
+                color: "white".into(),
+                x: p_zero(),
+                y: p_zero(),
+                font: String::new(),
+            },
             Effect::Volume { level: p_one() },
-            Effect::AudioFade { in_secs: 0.1, out_secs: 0.1 },
-            Effect::Highpass { frequency: p_two_hundred() },
-            Effect::Lowpass { frequency: p_three_thousand() },
-            Effect::Frei0r { name: "glow".into(), params: vec![Param::Static(0.5)] },
+            Effect::AudioFade {
+                in_secs: 0.1,
+                out_secs: 0.1,
+            },
+            Effect::Highpass {
+                frequency: p_two_hundred(),
+            },
+            Effect::Lowpass {
+                frequency: p_three_thousand(),
+            },
+            Effect::Frei0r {
+                name: "glow".into(),
+                params: vec![Param::Static(0.5)],
+            },
         ];
         for e in &all {
             let route = e.animation_route();
@@ -3745,7 +4615,11 @@ mod tests {
             // Every effect must compile without panicking.
             let _ = e.compile(2.0, 1920, 1080, 30);
         }
-        assert_eq!(all.len(), 17, "catalogue size changed — update the UI list too");
+        assert_eq!(
+            all.len(),
+            17,
+            "catalogue size changed — update the UI list too"
+        );
     }
 
     /// Regression test: two animated effects of the same kind on one clip must
@@ -3753,25 +4627,53 @@ mod tests {
     #[test]
     fn two_animated_effects_of_one_kind_do_not_cross_talk() {
         let s = temp_source("xtalk");
-        let ramp = |a: f64, b: f64| Param::Animated { keyframes: vec![
-            Keyframe { time: 0.0, value: a, easing: Easing::Linear },
-            Keyframe { time: 2.0, value: b, easing: Easing::Linear },
-        ]};
+        let ramp = |a: f64, b: f64| Param::Animated {
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: a,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 2.0,
+                    value: b,
+                    easing: Easing::Linear,
+                },
+            ],
+        };
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
-        c.effects.push(Effect::Blur { sigma: ramp(0.0, 5.0) });
-        c.effects.push(Effect::Blur { sigma: ramp(10.0, 20.0) });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
+        c.effects.push(Effect::Blur {
+            sigma: ramp(0.0, 5.0),
+        });
+        c.effects.push(Effect::Blur {
+            sigma: ramp(10.0, 20.0),
+        });
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
         let args = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap();
         let graph = args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].clone();
 
         // Two command streams, and each lives in a separate chain.
-        assert_eq!(graph.matches("sendcmd=c='").count(), 2, "expected one stream per effect");
+        assert_eq!(
+            graph.matches("sendcmd=c='").count(),
+            2,
+            "expected one stream per effect"
+        );
         let chains: Vec<&str> = graph.split(';').collect();
         let with_cmds: Vec<&&str> = chains.iter().filter(|c| c.contains("sendcmd")).collect();
-        assert_eq!(with_cmds.len(), 2, "commands must be in separate chains: {graph}");
+        assert_eq!(
+            with_cmds.len(),
+            2,
+            "commands must be in separate chains: {graph}"
+        );
         for chain in with_cmds {
-            assert_eq!(chain.matches("gblur").count(), 1,
-                       "a chain carrying commands must hold exactly one blur: {chain}");
+            assert_eq!(
+                chain.matches("gblur").count(),
+                1,
+                "a chain carrying commands must hold exactly one blur: {chain}"
+            );
         }
     }
 
@@ -3790,8 +4692,18 @@ mod tests {
 
     fn subs() -> Vec<Subtitle> {
         vec![
-            Subtitle { id: "1".into(), start: 0.5, end: 2.0, text: "First line".into() },
-            Subtitle { id: "2".into(), start: 2.5, end: 4.0, text: "Second line".into() },
+            Subtitle {
+                id: "1".into(),
+                start: 0.5,
+                end: 2.0,
+                text: "First line".into(),
+            },
+            Subtitle {
+                id: "2".into(),
+                start: 2.5,
+                end: 4.0,
+                text: "Second line".into(),
+            },
         ]
     }
 
@@ -3829,8 +4741,18 @@ mod tests {
     #[test]
     fn zero_length_and_empty_cues_are_dropped() {
         let bad = vec![
-            Subtitle { id: "a".into(), start: 1.0, end: 1.0, text: "zero length".into() },
-            Subtitle { id: "b".into(), start: 2.0, end: 3.0, text: "   ".into() },
+            Subtitle {
+                id: "a".into(),
+                start: 1.0,
+                end: 1.0,
+                text: "zero length".into(),
+            },
+            Subtitle {
+                id: "b".into(),
+                start: 2.0,
+                end: 3.0,
+                text: "   ".into(),
+            },
         ];
         assert_eq!(from_srt(&to_srt(&bad)).len(), 0);
     }
@@ -3850,8 +4772,10 @@ mod tests {
         assert!(graph.contains("enable='between(t,0.5000,2.0000)'"));
         // Drawn on the composited result, not on a single clip's chain.
         let sub_chain = graph.split(';').find(|c| c.contains("First line")).unwrap();
-        assert!(sub_chain.contains("comp") || sub_chain.contains("base"),
-                "subtitles must sit above every track: {sub_chain}");
+        assert!(
+            sub_chain.contains("comp") || sub_chain.contains("base"),
+            "subtitles must sit above every track: {sub_chain}"
+        );
     }
 
     #[test]
@@ -3869,9 +4793,12 @@ mod tests {
         let args = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), Some(&srt)).unwrap();
         let joined = args.join(" ");
         assert!(joined.contains("mov_text"), "mp4 needs mov_text: {joined}");
-        assert!(joined.contains("1:s:0"), "subtitle stream not mapped");  // one media input, so index 1
-        // Embedding must not also burn the text into the picture.
-        assert!(!joined.contains("drawtext=text='First line'"), "embed must not burn in");
+        assert!(joined.contains("1:s:0"), "subtitle stream not mapped"); // one media input, so index 1
+                                                                         // Embedding must not also burn the text into the picture.
+        assert!(
+            !joined.contains("drawtext=text='First line'"),
+            "embed must not burn in"
+        );
     }
 
     #[test]
@@ -3883,7 +4810,9 @@ mod tests {
         };
         p.subtitles = subs();
         p.subtitle_mode = SubtitleMode::Off;
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!joined.contains("First line"));
         assert!(!joined.contains("-c:s"));
     }
@@ -3903,7 +4832,9 @@ mod tests {
             text: "Hi: 'there', x=1:y=2".into(),
         }];
         p.subtitle_mode = SubtitleMode::Burn;
-        let graph = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let graph = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!graph.contains("text='Hi: 'there'"), "raw quote survived");
         assert!(graph.contains("\\:"), "colon not escaped");
     }
@@ -3920,9 +4851,17 @@ mod tests {
             green: vec![],
             blue: vec![],
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(g.contains("curves=master='0.0000/0.0000 0.5000/0.7000 1.0000/1.0000'"), "{g}");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            g.contains("curves=master='0.0000/0.0000 0.5000/0.7000 1.0000/1.0000'"),
+            "{g}"
+        );
         assert!(!g.contains(":r='"), "an empty channel must not be emitted");
     }
 
@@ -3931,10 +4870,18 @@ mod tests {
         let s = temp_source("cv1");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.effects.push(Effect::Curves {
-            master: vec![(0.5, 0.5)], red: vec![], green: vec![], blue: vec![],
+            master: vec![(0.5, 0.5)],
+            red: vec![],
+            green: vec![],
+            blue: vec![],
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!g.contains("curves="), "a single point defines no curve");
     }
 
@@ -3943,11 +4890,22 @@ mod tests {
         let s = temp_source("cv2");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.effects.push(Effect::Curves {
-            master: vec![(-5.0, 9.0), (1.0, 1.0)], red: vec![], green: vec![], blue: vec![],
+            master: vec![(-5.0, 9.0), (1.0, 1.0)],
+            red: vec![],
+            green: vec![],
+            blue: vec![],
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(g.contains("0.0000/1.0000"), "out-of-range points must clamp: {g}");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            g.contains("0.0000/1.0000"),
+            "out-of-range points must clamp: {g}"
+        );
     }
 
     #[test]
@@ -3955,12 +4913,23 @@ mod tests {
         let s = temp_source("cw");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.effects.push(Effect::ColorWheels {
-            lift_r: Param::Static(0.1), lift_g: p_zero(), lift_b: p_zero(),
-            gamma_r: p_zero(), gamma_g: Param::Static(0.2), gamma_b: p_zero(),
-            gain_r: p_zero(), gain_g: p_zero(), gain_b: Param::Static(0.3),
+            lift_r: Param::Static(0.1),
+            lift_g: p_zero(),
+            lift_b: p_zero(),
+            gamma_r: p_zero(),
+            gamma_g: Param::Static(0.2),
+            gamma_b: p_zero(),
+            gain_r: p_zero(),
+            gain_g: p_zero(),
+            gain_b: Param::Static(0.3),
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("colorbalance=rs=0.100000"), "shadows: {g}");
         assert!(g.contains("gm=0.200000"), "midtones");
         assert!(g.contains("bh=0.300000"), "highlights");
@@ -3971,16 +4940,36 @@ mod tests {
         let s = temp_source("cwa");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.effects.push(Effect::ColorWheels {
-            lift_r: Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: -0.3, easing: Easing::Linear },
-                Keyframe { time: 2.0, value: 0.3, easing: Easing::Linear },
-            ]},
-            lift_g: p_zero(), lift_b: p_zero(),
-            gamma_r: p_zero(), gamma_g: p_zero(), gamma_b: p_zero(),
-            gain_r: p_zero(), gain_g: p_zero(), gain_b: p_zero(),
+            lift_r: Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: -0.3,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 2.0,
+                        value: 0.3,
+                        easing: Easing::Linear,
+                    },
+                ],
+            },
+            lift_g: p_zero(),
+            lift_b: p_zero(),
+            gamma_r: p_zero(),
+            gamma_g: p_zero(),
+            gamma_b: p_zero(),
+            gain_r: p_zero(),
+            gain_g: p_zero(),
+            gain_b: p_zero(),
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("sendcmd"), "no command stream: {g}");
         assert!(g.contains("colorbalance rs"), "wheel not targeted");
     }
@@ -3990,8 +4979,13 @@ mod tests {
         let s = temp_source("lut0");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.effects.push(Effect::Lut3d { path: "   ".into() });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!g.contains("lut3d"), "an empty path must not reach ffmpeg");
     }
 
@@ -4009,9 +5003,18 @@ mod tests {
     fn stabilisation_without_an_analysis_file_is_inert() {
         let s = temp_source("st0");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
-        c.effects.push(Effect::Stabilize { trf: String::new(), smoothing: 10.0, zoom: 0.0 });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        c.effects.push(Effect::Stabilize {
+            trf: String::new(),
+            smoothing: 10.0,
+            zoom: 0.0,
+        });
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!g.contains("vidstabtransform"), "nothing to transform by");
     }
 
@@ -4019,9 +5022,18 @@ mod tests {
     fn stabilisation_clamps_its_parameters() {
         let s = temp_source("st1");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
-        c.effects.push(Effect::Stabilize { trf: "/tmp/x.trf".into(), smoothing: 9999.0, zoom: 999.0 });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        c.effects.push(Effect::Stabilize {
+            trf: "/tmp/x.trf".into(),
+            smoothing: 9999.0,
+            zoom: 999.0,
+        });
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("smoothing=100"), "smoothing not clamped: {g}");
         assert!(g.contains("zoom=50.00"), "zoom not clamped");
     }
@@ -4032,8 +5044,13 @@ mod tests {
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.effects.push(Effect::Loudness { target: -14.0 });
         assert!(c.effects[0].is_audio());
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("loudnorm=I=-14.0"), "{g}");
         // It must not appear in the video chain.
         let vchain = g.split(';').find(|c| c.contains("[v0]")).unwrap_or("");
@@ -4045,8 +5062,13 @@ mod tests {
         let s = temp_source("dn");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.effects.push(Effect::Denoise { strength: 0.0 });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!g.contains("hqdn3d"));
     }
 
@@ -4056,7 +5078,10 @@ mod tests {
         let mut adj = media_clip("a", &s, 0.0, 0.0, 2.0);
         adj.source = Source::Adjustment;
         adj.effects.push(Effect::Color {
-            brightness: Param::Static(-0.3), contrast: p_one(), saturation: p_one(), gamma: p_one(),
+            brightness: Param::Static(-0.3),
+            contrast: p_one(),
+            saturation: p_one(),
+            gamma: p_one(),
         });
 
         let mut t2 = video_track(vec![adj]);
@@ -4065,11 +5090,23 @@ mod tests {
             tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)]), t2],
             ..Default::default()
         };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(g.contains("eq=brightness="), "the adjustment did not compile: {g}");
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            g.contains("eq=brightness="),
+            "the adjustment did not compile: {g}"
+        );
         // It contributes no layer of its own, so only one overlay happens.
-        assert_eq!(g.matches("overlay=").count(), 1, "an adjustment layer must not overlay");
-        assert!(g.contains("enable='between(t,0.0000,2.0000)'"), "not gated to its span");
+        assert_eq!(
+            g.matches("overlay=").count(),
+            1,
+            "an adjustment layer must not overlay"
+        );
+        assert!(
+            g.contains("enable='between(t,0.0000,2.0000)'"),
+            "not gated to its span"
+        );
     }
 
     #[test]
@@ -4083,7 +5120,9 @@ mod tests {
             tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)]), t2],
             ..Default::default()
         };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert_eq!(g.matches("overlay=").count(), 1);
     }
 
@@ -4092,11 +5131,19 @@ mod tests {
         let png = scratch("odyssey-still.png");
         {
             use std::io::Write;
-            std::fs::File::create(&png).unwrap().write_all(b"x").unwrap();
+            std::fs::File::create(&png)
+                .unwrap()
+                .write_all(b"x")
+                .unwrap();
         }
         let mut c = media_clip("1", &png, 0.0, 0.0, 3.0);
-        c.source = Source::Still { path: png.to_string_lossy().to_string() };
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
+        c.source = Source::Still {
+            path: png.to_string_lossy().to_string(),
+        };
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
         let args = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap();
         let joined = args.join(" ");
         assert!(joined.contains("-loop 1"), "a still must loop: {joined}");
@@ -4132,27 +5179,55 @@ mod tests {
         c.motion.opacity = Param::Static(0.5);
         let mut t = video_track(vec![c]);
         t.opacity = 0.5;
-        let p = Project { tracks: vec![t], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(g.contains("colorchannelmixer=aa=0.250000"),
-                "0.5 clip under a 0.5 track should be 0.25: {g}");
+        let p = Project {
+            tracks: vec![t],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            g.contains("colorchannelmixer=aa=0.250000"),
+            "0.5 clip under a 0.5 track should be 0.25: {g}"
+        );
     }
 
     #[test]
     fn track_opacity_scales_a_keyframed_clip_opacity() {
         let s = temp_source("topk");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
-        c.motion.opacity = Param::Animated { keyframes: vec![
-            Keyframe { time: 0.0, value: 0.0, easing: Easing::Linear },
-            Keyframe { time: 2.0, value: 1.0, easing: Easing::Linear },
-        ]};
+        c.motion.opacity = Param::Animated {
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 0.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 2.0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
+            ],
+        };
         let mut t = video_track(vec![c]);
         t.opacity = 0.5;
-        let p = Project { tracks: vec![t], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![t],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         // The animation survives, scaled: it must never reach full opacity.
-        assert!(g.contains("sendcmd"), "keyframes should still drive commands");
-        assert!(!g.contains("colorchannelmixer aa 1.000000"), "track dimming was ignored: {g}");
+        assert!(
+            g.contains("sendcmd"),
+            "keyframes should still drive commands"
+        );
+        assert!(
+            !g.contains("colorchannelmixer aa 1.000000"),
+            "track dimming was ignored: {g}"
+        );
     }
 
     #[test]
@@ -4160,8 +5235,13 @@ mod tests {
         let s = temp_source("tblend");
         let mut t = video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)]);
         t.blend = BlendMode::Screen;
-        let p = Project { tracks: vec![t], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![t],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("blend=all_mode=screen"), "{g}");
     }
 
@@ -4172,8 +5252,13 @@ mod tests {
         c.blend = BlendMode::Multiply;
         let mut t = video_track(vec![c]);
         t.blend = BlendMode::Screen;
-        let p = Project { tracks: vec![t], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![t],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("all_mode=multiply"), "the clip should win: {g}");
         assert!(!g.contains("all_mode=screen"));
     }
@@ -4183,17 +5268,33 @@ mod tests {
         let s = temp_source("pitch");
         let mut keep = media_clip("1", &s, 0.0, 0.0, 4.0);
         keep.speed = Param::Static(2.0);
-        let p1 = Project { tracks: vec![video_track(vec![keep])], ..Default::default() };
-        let g1 = render_args(&p1, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(g1.contains("atempo=2"), "pitch-preserving speed uses atempo");
+        let p1 = Project {
+            tracks: vec![video_track(vec![keep])],
+            ..Default::default()
+        };
+        let g1 = render_args(&p1, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            g1.contains("atempo=2"),
+            "pitch-preserving speed uses atempo"
+        );
         assert!(!g1.contains("asetrate"));
 
         let mut shift = media_clip("1", &s, 0.0, 0.0, 4.0);
         shift.speed = Param::Static(2.0);
         shift.preserve_pitch = false;
-        let p2 = Project { tracks: vec![video_track(vec![shift])], ..Default::default() };
-        let g2 = render_args(&p2, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(g2.contains("asetrate"), "pitch-shifting speed resamples: {g2}");
+        let p2 = Project {
+            tracks: vec![video_track(vec![shift])],
+            ..Default::default()
+        };
+        let g2 = render_args(&p2, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            g2.contains("asetrate"),
+            "pitch-shifting speed resamples: {g2}"
+        );
         assert!(!g2.contains("atempo"));
     }
 
@@ -4201,9 +5302,17 @@ mod tests {
     fn a_dissolve_fades_the_incoming_clip_alpha() {
         let s = temp_source("tr1");
         let mut c = media_clip("1", &s, 0.0, 0.0, 3.0);
-        c.transition_in = Some(Transition { kind: TransitionKind::Dissolve, duration: 0.6 });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        c.transition_in = Some(Transition {
+            kind: TransitionKind::Dissolve,
+            duration: 0.6,
+        });
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("fade=t=in:st=0:d=0.6000:alpha=1"), "{g}");
     }
 
@@ -4211,20 +5320,39 @@ mod tests {
     fn a_dip_to_black_does_not_use_alpha() {
         let s = temp_source("tr2");
         let mut c = media_clip("1", &s, 0.0, 0.0, 3.0);
-        c.transition_in = Some(Transition { kind: TransitionKind::DipToBlack, duration: 0.4 });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        c.transition_in = Some(Transition {
+            kind: TransitionKind::DipToBlack,
+            duration: 0.4,
+        });
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("fade=t=in:st=0:d=0.4000"));
-        assert!(!g.contains("d=0.4000:alpha=1"), "dipping goes through the background");
+        assert!(
+            !g.contains("d=0.4000:alpha=1"),
+            "dipping goes through the background"
+        );
     }
 
     #[test]
     fn a_transition_is_clamped_to_the_clip_length() {
         let s = temp_source("tr3");
         let mut c = media_clip("1", &s, 0.0, 0.0, 1.0);
-        c.transition_in = Some(Transition { kind: TransitionKind::Dissolve, duration: 99.0 });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        c.transition_in = Some(Transition {
+            kind: TransitionKind::Dissolve,
+            duration: 99.0,
+        });
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("d=1.0000:alpha=1"), "not clamped: {g}");
     }
 
@@ -4237,11 +5365,22 @@ mod tests {
         voice.id = "voice".into();
         music.duck_under = Some("voice".into());
 
-        let p = Project { tracks: vec![music, voice], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(g.contains("sidechaincompress"), "no ducking in the graph: {g}");
+        let p = Project {
+            tracks: vec![music, voice],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            g.contains("sidechaincompress"),
+            "no ducking in the graph: {g}"
+        );
         // The key track must still be audible as well as keying.
-        assert!(g.contains("asplit=2"), "the key track was consumed rather than copied");
+        assert!(
+            g.contains("asplit=2"),
+            "the key track was consumed rather than copied"
+        );
     }
 
     #[test]
@@ -4249,8 +5388,13 @@ mod tests {
         let s = temp_source("duck0");
         let mut music = video_track(vec![media_clip("m", &s, 0.0, 0.0, 2.0)]);
         music.duck_under = Some("nope".into());
-        let p = Project { tracks: vec![music], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![music],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!g.contains("sidechaincompress"));
     }
 
@@ -4272,7 +5416,10 @@ mod tests {
         let second = edl.find("002").unwrap();
         assert!(first < second, "events must be numbered in timeline order");
         // 4s at 25fps is 00:00:04:00.
-        assert!(edl.contains("00:00:04:00"), "record-in timecode wrong: {edl}");
+        assert!(
+            edl.contains("00:00:04:00"),
+            "record-in timecode wrong: {edl}"
+        );
     }
 
     #[test]
@@ -4285,8 +5432,11 @@ mod tests {
             ..Default::default()
         };
         let edl = to_edl(&p, "T");
-        assert_eq!(edl.matches("FROM CLIP NAME").count(), 1,
-                   "an adjustment layer is not an edit: {edl}");
+        assert_eq!(
+            edl.matches("FROM CLIP NAME").count(),
+            1,
+            "an adjustment layer is not an edit: {edl}"
+        );
     }
 
     #[test]
@@ -4306,9 +5456,17 @@ mod tests {
         let tracks = doc["tracks"]["children"].as_array().unwrap();
         assert_eq!(tracks.len(), 2, "both tracks must survive");
         assert_eq!(tracks[1]["kind"], "Audio");
-        let kinds: Vec<&str> = tracks[0]["children"].as_array().unwrap()
-            .iter().map(|c| c["OTIO_SCHEMA"].as_str().unwrap()).collect();
-        assert_eq!(kinds, vec!["Gap.1", "Clip.1"], "the leading gap must be explicit");
+        let kinds: Vec<&str> = tracks[0]["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["OTIO_SCHEMA"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            kinds,
+            vec!["Gap.1", "Clip.1"],
+            "the leading gap must be explicit"
+        );
     }
 
     #[test]
@@ -4320,7 +5478,12 @@ mod tests {
             tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)])],
             ..Default::default()
         };
-        p.markers.push(Marker { id: "m".into(), time: 1.0, name: "cue".into(), colour: "#fff".into() });
+        p.markers.push(Marker {
+            id: "m".into(),
+            time: 1.0,
+            name: "cue".into(),
+            colour: "#fff".into(),
+        });
 
         let path = autosave(&p, "item1", &dir).unwrap();
         assert!(Path::new(&path).exists());
@@ -4333,7 +5496,7 @@ mod tests {
         // Snapshots for another item must not be listed or pruned with ours.
         autosave(&p, "item2", &dir).unwrap();
         assert_eq!(autosaves("item2", &dir).len(), 1);
-        assert!(autosaves("item1", &dir).len() >= 1);
+        assert!(!autosaves("item1", &dir).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -4345,22 +5508,39 @@ mod tests {
         // Two clips butted together, the second with head handles to spare.
         let a = media_clip("a", &s, 0.0, 0.0, 4.0);
         let mut b = media_clip("b", &s, 4.0, 2.0, 6.0);
-        b.transition_in = Some(Transition { kind: TransitionKind::Dissolve, duration: 1.0 });
+        b.transition_in = Some(Transition {
+            kind: TransitionKind::Dissolve,
+            duration: 1.0,
+        });
 
-        let p = Project { tracks: vec![video_track(vec![a, b])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![a, b])],
+            ..Default::default()
+        };
         let resolved = apply_transitions(&p);
         let clips = &resolved.tracks[0].clips;
 
         let incoming = clips.iter().find(|c| c.id == "b").unwrap();
         let outgoing = clips.iter().find(|c| c.id == "a").unwrap();
-        assert!((incoming.start - 3.0).abs() < 1e-6,
-                "the incoming clip should be pulled back by the transition: {}", incoming.start);
-        assert!((incoming.in_point - 1.0).abs() < 1e-6,
-                "and consume its head handle: {}", incoming.in_point);
-        assert!((outgoing.out_point - 5.0).abs() < 1e-6,
-                "the outgoing clip should be extended to play underneath: {}", outgoing.out_point);
-        assert!(outgoing.end() > incoming.start,
-                "they must actually overlap, or there is nothing to dissolve from");
+        assert!(
+            (incoming.start - 3.0).abs() < 1e-6,
+            "the incoming clip should be pulled back by the transition: {}",
+            incoming.start
+        );
+        assert!(
+            (incoming.in_point - 1.0).abs() < 1e-6,
+            "and consume its head handle: {}",
+            incoming.in_point
+        );
+        assert!(
+            (outgoing.out_point - 5.0).abs() < 1e-6,
+            "the outgoing clip should be extended to play underneath: {}",
+            outgoing.out_point
+        );
+        assert!(
+            outgoing.end() > incoming.start,
+            "they must actually overlap, or there is nothing to dissolve from"
+        );
     }
 
     #[test]
@@ -4369,14 +5549,30 @@ mod tests {
         let a = media_clip("a", &s, 0.0, 0.0, 4.0);
         // in_point 0 means no head handle at all.
         let mut b = media_clip("b", &s, 4.0, 0.0, 4.0);
-        b.transition_in = Some(Transition { kind: TransitionKind::Dissolve, duration: 1.0 });
+        b.transition_in = Some(Transition {
+            kind: TransitionKind::Dissolve,
+            duration: 1.0,
+        });
 
-        let p = Project { tracks: vec![video_track(vec![a, b])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![a, b])],
+            ..Default::default()
+        };
         let resolved = apply_transitions(&p);
-        let incoming = resolved.tracks[0].clips.iter().find(|c| c.id == "b").unwrap();
-        assert!((incoming.start - 4.0).abs() < 1e-6,
-                "with no handles the clip must not move: {}", incoming.start);
-        assert!(incoming.in_point >= 0.0, "and must never seek before the start of the source");
+        let incoming = resolved.tracks[0]
+            .clips
+            .iter()
+            .find(|c| c.id == "b")
+            .unwrap();
+        assert!(
+            (incoming.start - 4.0).abs() < 1e-6,
+            "with no handles the clip must not move: {}",
+            incoming.start
+        );
+        assert!(
+            incoming.in_point >= 0.0,
+            "and must never seek before the start of the source"
+        );
     }
 
     #[test]
@@ -4385,13 +5581,26 @@ mod tests {
         // The outgoing clip is only 0.5s, so a 2s dissolve cannot consume it.
         let a = media_clip("a", &s, 0.0, 0.0, 0.5);
         let mut b = media_clip("b", &s, 0.5, 4.0, 8.0);
-        b.transition_in = Some(Transition { kind: TransitionKind::Dissolve, duration: 2.0 });
+        b.transition_in = Some(Transition {
+            kind: TransitionKind::Dissolve,
+            duration: 2.0,
+        });
 
-        let p = Project { tracks: vec![video_track(vec![a, b])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![a, b])],
+            ..Default::default()
+        };
         let resolved = apply_transitions(&p);
-        let incoming = resolved.tracks[0].clips.iter().find(|c| c.id == "b").unwrap();
+        let incoming = resolved.tracks[0]
+            .clips
+            .iter()
+            .find(|c| c.id == "b")
+            .unwrap();
         let overlap = incoming.transition_in.as_ref().unwrap().duration;
-        assert!(overlap <= 0.5 + 1e-6, "overlap exceeded the outgoing clip: {overlap}");
+        assert!(
+            overlap <= 0.5 + 1e-6,
+            "overlap exceeded the outgoing clip: {overlap}"
+        );
     }
 
     #[test]
@@ -4400,12 +5609,25 @@ mod tests {
         let a = media_clip("a", &s, 0.0, 0.0, 2.0);
         // A gap between them: this is a fade up, not a cross dissolve.
         let mut b = media_clip("b", &s, 5.0, 2.0, 6.0);
-        b.transition_in = Some(Transition { kind: TransitionKind::Dissolve, duration: 1.0 });
+        b.transition_in = Some(Transition {
+            kind: TransitionKind::Dissolve,
+            duration: 1.0,
+        });
 
-        let p = Project { tracks: vec![video_track(vec![a, b])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![a, b])],
+            ..Default::default()
+        };
         let resolved = apply_transitions(&p);
-        let incoming = resolved.tracks[0].clips.iter().find(|c| c.id == "b").unwrap();
-        assert!((incoming.start - 5.0).abs() < 1e-6, "a clip across a gap must not move");
+        let incoming = resolved.tracks[0]
+            .clips
+            .iter()
+            .find(|c| c.id == "b")
+            .unwrap();
+        assert!(
+            (incoming.start - 5.0).abs() < 1e-6,
+            "a clip across a gap must not move"
+        );
     }
 
     #[test]
@@ -4421,8 +5643,13 @@ mod tests {
         let mut voice = video_track(vec![media_clip("v", &s, 0.0, 0.0, 4.0)]);
         voice.id = "voice".into();
 
-        let p = Project { tracks: vec![music, voice], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![music, voice],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("threshold=0.2000"), "threshold not applied: {g}");
         assert!(g.contains("ratio=12.00"));
         assert!(g.contains("attack=5.0"));
@@ -4439,8 +5666,13 @@ mod tests {
         music.duck_threshold = 50.0;
         let mut voice = video_track(vec![media_clip("v", &s, 0.0, 0.0, 2.0)]);
         voice.id = "voice".into();
-        let p = Project { tracks: vec![music, voice], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![music, voice],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("ratio=20.00"), "ratio not clamped: {g}");
         assert!(g.contains("threshold=1.0000"), "threshold not clamped");
     }
@@ -4452,9 +5684,17 @@ mod tests {
         let s = temp_source("chan");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.channels = vec![1];
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(g.contains("pan=mono|c0=c1"), "one channel should fold to mono: {g}");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            g.contains("pan=mono|c0=c1"),
+            "one channel should fold to mono: {g}"
+        );
     }
 
     #[test]
@@ -4462,8 +5702,13 @@ mod tests {
         let s = temp_source("chan2");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
         c.channels = vec![2, 3];
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(g.contains("pan=stereo|c0=c2|c1=c3"), "{g}");
     }
 
@@ -4474,7 +5719,9 @@ mod tests {
             tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)])],
             ..Default::default()
         };
-        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let g = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(!g.contains("pan="));
     }
 
@@ -4486,7 +5733,10 @@ mod tests {
             name: "Insert".into(),
             project: Box::new(Project::default()),
         };
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
         let err = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap_err();
         assert!(err.to_string().contains("not flattened"), "{err}");
     }
@@ -4499,10 +5749,16 @@ mod tests {
             name: "Insert".into(),
             project: Box::new(Project::default()),
         };
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
         let dir = scratch("odyssey-nest-empty");
         let err = flatten_nested(&p, &dir).unwrap_err();
-        assert!(err.to_string().contains("Insert"), "the name should be in the error: {err}");
+        assert!(
+            err.to_string().contains("Insert"),
+            "the name should be in the error: {err}"
+        );
     }
 
     #[test]
@@ -4541,19 +5797,30 @@ mod tests {
         let s = temp_source("queue");
         let good = Project {
             tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 1.0)])],
-            width: 64, height: 48, fps: 10, ..Default::default()
+            width: 64,
+            height: 48,
+            fps: 10,
+            ..Default::default()
         };
         // An empty project cannot render, so this job must fail on its own.
         let bad = Project::default();
 
         let jobs = vec![
             RenderJob {
-                id: "a".into(), name: "bad".into(), project: bad,
-                profile: preview_profile(), output: "/tmp/odyssey-q-bad.webm".into(), zone: None,
+                id: "a".into(),
+                name: "bad".into(),
+                project: bad,
+                profile: preview_profile(),
+                output: "/tmp/odyssey-q-bad.webm".into(),
+                zone: None,
             },
             RenderJob {
-                id: "b".into(), name: "good".into(), project: good,
-                profile: preview_profile(), output: "/tmp/odyssey-q-good.webm".into(), zone: None,
+                id: "b".into(),
+                name: "good".into(),
+                project: good,
+                profile: preview_profile(),
+                output: "/tmp/odyssey-q-good.webm".into(),
+                zone: None,
             },
         ];
         let dir = scratch("odyssey-queue-cache");
@@ -4573,9 +5840,9 @@ mod tests {
         let s = temp_source("sl1");
         let p = Project {
             tracks: vec![video_track(vec![
-                media_clip("a", &s, 0.0, 0.0, 2.0),   // 0..2
-                media_clip("b", &s, 5.0, 0.0, 2.0),   // 5..7
-                media_clip("c", &s, 20.0, 0.0, 2.0),  // 20..22
+                media_clip("a", &s, 0.0, 0.0, 2.0),  // 0..2
+                media_clip("b", &s, 5.0, 0.0, 2.0),  // 5..7
+                media_clip("c", &s, 20.0, 0.0, 2.0), // 20..22
             ])],
             ..Default::default()
         };
@@ -4597,7 +5864,10 @@ mod tests {
         let cut = slice(&p, 4.0, 8.0);
         let c = &cut.tracks[0].clips[0];
         assert_eq!(c.start, 0.0, "rebased to the slice");
-        assert!((c.in_point - 4.0).abs() < 1e-6, "head trimmed into the source");
+        assert!(
+            (c.in_point - 4.0).abs() < 1e-6,
+            "head trimmed into the source"
+        );
         assert!((c.out_point - 8.0).abs() < 1e-6, "tail trimmed");
         assert!((c.duration() - 4.0).abs() < 1e-6);
     }
@@ -4607,16 +5877,29 @@ mod tests {
         let s = temp_source("sl3");
         let mut c = media_clip("a", &s, 0.0, 0.0, 8.0);
         // Ramp from 1x to 4x across the source.
-        c.speed = Param::Animated { keyframes: vec![
-            Keyframe { time: 0.0, value: 1.0, easing: Easing::Linear },
-            Keyframe { time: 8.0, value: 4.0, easing: Easing::Linear },
-        ]};
+        c.speed = Param::Animated {
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 8.0,
+                    value: 4.0,
+                    easing: Easing::Linear,
+                },
+            ],
+        };
         let out_len = c.duration();
         // Cut the first half of the OUTPUT, which is not the first half of the
         // source, because the clip accelerates.
         let half = out_len / 2.0;
         let expected_in = c.source_time_at(half);
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
 
         let cut = slice(&p, half, out_len);
         let sliced = &cut.tracks[0].clips[0];
@@ -4625,7 +5908,10 @@ mod tests {
             "trim must follow the ramp: got {}, expected {expected_in}",
             sliced.in_point
         );
-        assert!(expected_in > half, "an accelerating clip is further into the source than the output time");
+        assert!(
+            expected_in > half,
+            "an accelerating clip is further into the source than the output time"
+        );
     }
 
     #[test]
@@ -4648,8 +5934,14 @@ mod tests {
             ..Default::default()
         };
         let before = preview_key(&p, 0.0, 4.0, 0.5);
-        p.tracks[0].clips[0].effects.push(Effect::Blur { sigma: Param::Static(6.0) });
-        assert_ne!(before, preview_key(&p, 0.0, 4.0, 0.5), "an edit must invalidate the chunk");
+        p.tracks[0].clips[0].effects.push(Effect::Blur {
+            sigma: Param::Static(6.0),
+        });
+        assert_ne!(
+            before,
+            preview_key(&p, 0.0, 4.0, 0.5),
+            "an edit must invalidate the chunk"
+        );
     }
 
     /// An edit outside the range must NOT invalidate a rendered chunk, or
@@ -4665,8 +5957,14 @@ mod tests {
             ..Default::default()
         };
         let before = preview_key(&p, 0.0, 4.0, 0.5);
-        p.tracks[0].clips[1].effects.push(Effect::Blur { sigma: Param::Static(6.0) });
-        assert_eq!(before, preview_key(&p, 0.0, 4.0, 0.5), "a distant edit must not invalidate");
+        p.tracks[0].clips[1].effects.push(Effect::Blur {
+            sigma: Param::Static(6.0),
+        });
+        assert_eq!(
+            before,
+            preview_key(&p, 0.0, 4.0, 0.5),
+            "a distant edit must not invalidate"
+        );
     }
 
     #[test]
@@ -4686,7 +5984,10 @@ mod tests {
         let p = Project::default();
         let dir = scratch("odyssey-preview-empty");
         assert!(render_preview(&p, 5.0, 5.0, 0.5, &dir).is_err());
-        assert!(render_preview(&p, 0.0, 2.0, 0.5, &dir).is_err(), "no clips in range");
+        assert!(
+            render_preview(&p, 0.0, 2.0, 0.5, &dir).is_err(),
+            "no clips in range"
+        );
     }
 
     // ---- frei0r ----
@@ -4699,8 +6000,13 @@ mod tests {
             name: "glow".into(),
             params: vec![Param::Static(0.4)],
         });
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
-        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
         assert!(joined.contains("frei0r=filter_name=glow"), "{joined}");
         assert!(joined.contains("filter_params=0.400000"));
     }
@@ -4731,10 +6037,20 @@ mod tests {
     fn a_speed_ramp_becomes_many_segments() {
         let s = temp_source("sp2");
         let mut c = media_clip("1", &s, 0.0, 0.0, 4.0);
-        c.speed = Param::Animated { keyframes: vec![
-            Keyframe { time: 0.0, value: 1.0, easing: Easing::Linear },
-            Keyframe { time: 4.0, value: 4.0, easing: Easing::Linear },
-        ]};
+        c.speed = Param::Animated {
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 4.0,
+                    value: 4.0,
+                    easing: Easing::Linear,
+                },
+            ],
+        };
         let segs = c.segments();
         assert!(segs.len() > 8, "ramp not subdivided: {}", segs.len());
         // Speeding up must shorten the clip, and bound it by the extremes:
@@ -4743,39 +6059,82 @@ mod tests {
         assert!(d > 1.0 && d < 4.0, "ramped duration out of range: {d}");
         // Segments must tile the source without gaps.
         for w in segs.windows(2) {
-            assert!((w[0].src_end - w[1].src_start).abs() < 1e-6, "gap between segments");
-            assert!((w[0].out_offset + w[0].out_len - w[1].out_offset).abs() < 1e-6, "gap on timeline");
+            assert!(
+                (w[0].src_end - w[1].src_start).abs() < 1e-6,
+                "gap between segments"
+            );
+            assert!(
+                (w[0].out_offset + w[0].out_len - w[1].out_offset).abs() < 1e-6,
+                "gap on timeline"
+            );
         }
         assert!((segs[0].speed - 1.0).abs() < 0.3, "starts near 1x");
-        assert!((segs[segs.len()-1].speed - 4.0).abs() < 0.3, "ends near 4x");
+        assert!(
+            (segs[segs.len() - 1].speed - 4.0).abs() < 0.3,
+            "ends near 4x"
+        );
     }
 
     #[test]
     fn a_ramped_clip_renders_one_input_per_segment() {
         let s = temp_source("sp3");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
-        c.speed = Param::Animated { keyframes: vec![
-            Keyframe { time: 0.0, value: 1.0, easing: Easing::Linear },
-            Keyframe { time: 2.0, value: 2.0, easing: Easing::Linear },
-        ]};
+        c.speed = Param::Animated {
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 2.0,
+                    value: 2.0,
+                    easing: Easing::Linear,
+                },
+            ],
+        };
         let segs = c.segments().len();
-        let p = Project { tracks: vec![video_track(vec![c])], ..Default::default() };
+        let p = Project {
+            tracks: vec![video_track(vec![c])],
+            ..Default::default()
+        };
         let args = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None).unwrap();
-        assert_eq!(args.iter().filter(|a| *a == "-i").count(), segs,
-                   "expected one input per segment");
+        assert_eq!(
+            args.iter().filter(|a| *a == "-i").count(),
+            segs,
+            "expected one input per segment"
+        );
         let joined = args.join(" ");
-        assert_eq!(joined.matches("overlay=").count(), segs, "each segment composites");
+        assert_eq!(
+            joined.matches("overlay=").count(),
+            segs,
+            "each segment composites"
+        );
     }
 
     #[test]
     fn a_slow_ramp_lengthens_the_clip() {
         let s = temp_source("sp4");
         let mut c = media_clip("1", &s, 0.0, 0.0, 2.0);
-        c.speed = Param::Animated { keyframes: vec![
-            Keyframe { time: 0.0, value: 1.0, easing: Easing::Linear },
-            Keyframe { time: 2.0, value: 0.25, easing: Easing::Linear },
-        ]};
-        assert!(c.duration() > 2.0, "slowing down must lengthen: {}", c.duration());
+        c.speed = Param::Animated {
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 2.0,
+                    value: 0.25,
+                    easing: Easing::Linear,
+                },
+            ],
+        };
+        assert!(
+            c.duration() > 2.0,
+            "slowing down must lengthen: {}",
+            c.duration()
+        );
     }
 
     #[test]
@@ -4787,8 +6146,16 @@ mod tests {
         };
         for profile in render_profiles() {
             let args = render_args(&p, &profile, Path::new("/tmp/out"), None).unwrap();
-            assert!(args.contains(&"-filter_complex".to_string()), "{} has no graph", profile.id);
-            assert!(args.last().unwrap().contains("out"), "{} lost its output", profile.id);
+            assert!(
+                args.contains(&"-filter_complex".to_string()),
+                "{} has no graph",
+                profile.id
+            );
+            assert!(
+                args.last().unwrap().contains("out"),
+                "{} lost its output",
+                profile.id
+            );
         }
     }
 }
@@ -4798,8 +6165,8 @@ mod tests {
 /// filter graphs that are well-formed strings but invalid to ffmpeg.
 #[cfg(test)]
 mod e2e {
-    use super::*;
     use super::tests::scratch;
+    use super::*;
     use std::io::Write;
 
     fn ffmpeg_available() -> bool {
@@ -4810,10 +6177,27 @@ mod e2e {
     fn make_media(name: &str, secs: f64) -> PathBuf {
         let path = scratch(&format!("odyssey-e2e-{name}.mp4"));
         let status = Command::new("ffmpeg")
-            .args(["-y", "-hide_banner", "-v", "error",
-                   "-f", "lavfi", "-i", &format!("testsrc=size=320x240:rate=30:duration={secs}"),
-                   "-f", "lavfi", "-i", &format!("sine=frequency=440:duration={secs}"),
-                   "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+            .args([
+                "-y",
+                "-hide_banner",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("testsrc=size=320x240:rate=30:duration={secs}"),
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("sine=frequency=440:duration={secs}"),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+            ])
             .arg(&path)
             .status()
             .expect("ffmpeg should run");
@@ -4823,46 +6207,88 @@ mod e2e {
 
     fn probe_duration(path: &Path) -> f64 {
         let out = Command::new("ffprobe")
-            .args(["-v", "error", "-show_entries", "format=duration",
-                   "-of", "default=noprint_wrappers=1:nokey=1"])
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+            ])
             .arg(path)
             .output()
             .expect("ffprobe should run");
-        String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(-1.0)
+        String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .parse()
+            .unwrap_or(-1.0)
     }
 
     fn probe_streams(path: &Path) -> String {
         let out = Command::new("ffprobe")
-            .args(["-v", "error", "-show_entries", "stream=codec_type",
-                   "-of", "default=noprint_wrappers=1:nokey=1"])
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+            ])
             .arg(path)
             .output()
             .expect("ffprobe should run");
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     }
 
-    fn clip(id: &str, src: &PathBuf, start: f64, a: f64, b: f64) -> Clip {
+    fn clip(id: &str, src: &Path, start: f64, a: f64, b: f64) -> Clip {
         Clip {
             id: id.into(),
-            source: Source::Media { path: src.to_string_lossy().to_string() },
-            start, in_point: a, out_point: b, speed: Param::Static(1.0), reverse: false,
-            gain: 1.0, muted: false, effects: vec![],
-            motion: Motion::default(), blend: BlendMode::Normal,
-            channels: vec![], preserve_pitch: true, transition_in: None,
+            source: Source::Media {
+                path: src.to_string_lossy().to_string(),
+            },
+            start,
+            in_point: a,
+            out_point: b,
+            speed: Param::Static(1.0),
+            reverse: false,
+            gain: 1.0,
+            muted: false,
+            effects: vec![],
+            motion: Motion::default(),
+            blend: BlendMode::Normal,
+            channels: vec![],
+            preserve_pitch: true,
+            transition_in: None,
         }
     }
 
     fn track(id: &str, clips: Vec<Clip>) -> Track {
         Track {
-            id: id.into(), name: id.into(), kind: TrackKind::Video,
-            clips, muted: false, hidden: false, locked: false, solo: false, volume: 1.0,
-            opacity: 1.0, blend: BlendMode::Normal, targeted: false, duck_under: None,
-            duck_threshold: 0.05, duck_ratio: 8.0, duck_attack: 20.0, duck_release: 300.0,
+            id: id.into(),
+            name: id.into(),
+            kind: TrackKind::Video,
+            clips,
+            muted: false,
+            hidden: false,
+            locked: false,
+            solo: false,
+            volume: 1.0,
+            opacity: 1.0,
+            blend: BlendMode::Normal,
+            targeted: false,
+            duck_under: None,
+            duck_threshold: 0.05,
+            duck_ratio: 8.0,
+            duck_attack: 20.0,
+            duck_release: 300.0,
         }
     }
 
     fn fast_profile() -> RenderProfile {
-        render_profiles().into_iter().find(|p| p.id == "mp4-h264-fast").unwrap()
+        render_profiles()
+            .into_iter()
+            .find(|p| p.id == "mp4-h264-fast")
+            .unwrap()
     }
 
     #[test]
@@ -4879,24 +6305,40 @@ mod e2e {
         c1.effects.push(Effect::Color {
             brightness: Param::Animated {
                 keyframes: vec![
-                    Keyframe { time: 0.0, value: -0.5, easing: Easing::EaseInOut },
-                    Keyframe { time: 2.0, value: 0.3, easing: Easing::Linear },
+                    Keyframe {
+                        time: 0.0,
+                        value: -0.5,
+                        easing: Easing::EaseInOut,
+                    },
+                    Keyframe {
+                        time: 2.0,
+                        value: 0.3,
+                        easing: Easing::Linear,
+                    },
                 ],
             },
             contrast: Param::Static(1.2),
             saturation: Param::Static(1.0),
             gamma: Param::Static(1.0),
         });
-        c1.effects.push(Effect::Fade { in_secs: 0.5, out_secs: 0.5 });
+        c1.effects.push(Effect::Fade {
+            in_secs: 0.5,
+            out_secs: 0.5,
+        });
 
         // Track 2: a half-opacity overlay starting at 1s, at double speed.
         let mut c2 = clip("c2", &b, 1.0, 0.0, 2.0);
         c2.speed = Param::Static(2.0);
-        c2.effects.push(Effect::Opacity { level: Param::Static(0.5) });
+        c2.effects.push(Effect::Opacity {
+            level: Param::Static(0.5),
+        });
 
         let project = Project {
             tracks: vec![track("V1", vec![c1]), track("V2", vec![c2])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
 
         // V1 ends at 2.0; V2 starts at 1.0 and runs 1.0s at double speed.
@@ -4919,19 +6361,38 @@ mod e2e {
             return;
         }
         let project = Project {
-            tracks: vec![track("V1", vec![Clip {
-                id: "title".into(),
-                source: Source::Title {
-                    text: "Odyssey Design".into(), background: "#101820".into(),
-                    size: 36.0, color: "white".into(),
-                },
-                start: 0.0, in_point: 0.0, out_point: 1.5, speed: Param::Static(1.0),
-                reverse: false, gain: 1.0, muted: false,
-                effects: vec![Effect::Fade { in_secs: 0.3, out_secs: 0.3 }],
-                motion: Motion::default(), blend: BlendMode::Normal,
-            channels: vec![], preserve_pitch: true, transition_in: None,
-            }])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            tracks: vec![track(
+                "V1",
+                vec![Clip {
+                    id: "title".into(),
+                    source: Source::Title {
+                        text: "Odyssey Design".into(),
+                        background: "#101820".into(),
+                        size: 36.0,
+                        color: "white".into(),
+                    },
+                    start: 0.0,
+                    in_point: 0.0,
+                    out_point: 1.5,
+                    speed: Param::Static(1.0),
+                    reverse: false,
+                    gain: 1.0,
+                    muted: false,
+                    effects: vec![Effect::Fade {
+                        in_secs: 0.3,
+                        out_secs: 0.3,
+                    }],
+                    motion: Motion::default(),
+                    blend: BlendMode::Normal,
+                    channels: vec![],
+                    preserve_pitch: true,
+                    transition_in: None,
+                }],
+            )],
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-e2e-title.mp4");
         let rendered = render(&project, &fast_profile(), &out)
@@ -4948,7 +6409,10 @@ mod e2e {
         let a = make_media("gapsrc", 2.0);
         let project = Project {
             tracks: vec![track("V1", vec![clip("c", &a, 2.0, 0.0, 1.0)])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         assert_eq!(project.duration(), 3.0);
         let out = scratch("odyssey-e2e-gap.mp4");
@@ -4970,7 +6434,10 @@ mod e2e {
 
         let project = Project {
             tracks: vec![track("V1", vec![clip("c", &nasty, 0.0, 0.0, 1.0)])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-e2e-nasty.mp4");
         let rendered = render(&project, &fast_profile(), &out)
@@ -4988,7 +6455,10 @@ mod e2e {
         let src = make_media("selfout", 1.0);
         let project = Project {
             tracks: vec![track("V1", vec![clip("c", &src, 0.0, 0.0, 1.0)])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let err = render_args(&project, &fast_profile(), &src, None).unwrap_err();
         assert!(
@@ -5002,18 +6472,33 @@ mod e2e {
     /// sendcmd-driven animation must survive a real render.
     #[test]
     fn renders_an_animated_blur_through_sendcmd() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("blur", 2.0);
         let mut c = clip("c", &src, 0.0, 0.0, 2.0);
         c.effects.push(Effect::Blur {
-            sigma: Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: 0.5, easing: Easing::Linear },
-                Keyframe { time: 2.0, value: 12.0, easing: Easing::EaseInOut },
-            ]},
+            sigma: Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: 0.5,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 2.0,
+                        value: 12.0,
+                        easing: Easing::EaseInOut,
+                    },
+                ],
+            },
         });
         let project = Project {
             tracks: vec![track("V1", vec![c])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-e2e-blur-out.mp4");
         let rendered = render(&project, &fast_profile(), &out)
@@ -5024,18 +6509,33 @@ mod e2e {
     /// Stacked, timeline-gated animation for a filter with no runtime options.
     #[test]
     fn renders_an_animated_sharpen_by_stacking() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("sharp", 1.0);
         let mut c = clip("c", &src, 0.0, 0.0, 1.0);
         c.effects.push(Effect::Sharpen {
-            amount: Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: 0.0, easing: Easing::Linear },
-                Keyframe { time: 1.0, value: 2.5, easing: Easing::Linear },
-            ]},
+            amount: Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: 0.0,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 1.0,
+                        value: 2.5,
+                        easing: Easing::Linear,
+                    },
+                ],
+            },
         });
         let project = Project {
             tracks: vec![track("V1", vec![c])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-e2e-sharp-out.mp4");
         render(&project, &fast_profile(), &out)
@@ -5044,24 +6544,49 @@ mod e2e {
 
     #[test]
     fn renders_an_animated_vignette_and_opacity() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("vig", 1.5);
         let mut c = clip("c", &src, 0.0, 0.0, 1.5);
         c.effects.push(Effect::Vignette {
-            angle: Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: 0.1, easing: Easing::Linear },
-                Keyframe { time: 1.5, value: 1.2, easing: Easing::Linear },
-            ]},
+            angle: Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: 0.1,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 1.5,
+                        value: 1.2,
+                        easing: Easing::Linear,
+                    },
+                ],
+            },
         });
         c.effects.push(Effect::Opacity {
-            level: Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: 0.2, easing: Easing::Linear },
-                Keyframe { time: 1.5, value: 1.0, easing: Easing::Linear },
-            ]},
+            level: Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: 0.2,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 1.5,
+                        value: 1.0,
+                        easing: Easing::Linear,
+                    },
+                ],
+            },
         });
         let project = Project {
             tracks: vec![track("V1", vec![c])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-e2e-vig-out.mp4");
         render(&project, &fast_profile(), &out)
@@ -5071,41 +6596,78 @@ mod e2e {
     /// Time remapping: a speed ramp renders and lands at the expected length.
     #[test]
     fn renders_a_speed_ramp() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("ramp", 4.0);
         let mut c = clip("c", &src, 0.0, 0.0, 4.0);
-        c.speed = Param::Animated { keyframes: vec![
-            Keyframe { time: 0.0, value: 1.0, easing: Easing::Linear },
-            Keyframe { time: 4.0, value: 4.0, easing: Easing::Linear },
-        ]};
+        c.speed = Param::Animated {
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: 1.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 4.0,
+                    value: 4.0,
+                    easing: Easing::Linear,
+                },
+            ],
+        };
         let expected = c.duration();
         let project = Project {
             tracks: vec![track("V1", vec![c])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-e2e-ramp-out.mp4");
         let rendered = render(&project, &fast_profile(), &out)
             .unwrap_or_else(|e| panic!("speed ramp failed:\n{e}"));
         let dur = probe_duration(Path::new(&rendered));
-        assert!((dur - expected).abs() < 0.4, "ramp length wrong: got {dur}, expected {expected}");
+        assert!(
+            (dur - expected).abs() < 0.4,
+            "ramp length wrong: got {dur}, expected {expected}"
+        );
         assert!(dur < 4.0, "speeding up should shorten the clip");
     }
 
     /// Two animated effects of the same kind on one clip must render.
     #[test]
     fn renders_two_animated_blurs_on_one_clip() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("xtalk", 1.0);
-        let ramp = |a: f64, b: f64| Param::Animated { keyframes: vec![
-            Keyframe { time: 0.0, value: a, easing: Easing::Linear },
-            Keyframe { time: 1.0, value: b, easing: Easing::Linear },
-        ]};
+        let ramp = |a: f64, b: f64| Param::Animated {
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: a,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 1.0,
+                    value: b,
+                    easing: Easing::Linear,
+                },
+            ],
+        };
         let mut c = clip("c", &src, 0.0, 0.0, 1.0);
-        c.effects.push(Effect::Blur { sigma: ramp(0.0, 3.0) });
-        c.effects.push(Effect::Blur { sigma: ramp(4.0, 8.0) });
+        c.effects.push(Effect::Blur {
+            sigma: ramp(0.0, 3.0),
+        });
+        c.effects.push(Effect::Blur {
+            sigma: ramp(4.0, 8.0),
+        });
         let project = Project {
             tracks: vec![track("V1", vec![c])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-e2e-xtalk-out.mp4");
         render(&project, &fast_profile(), &out)
@@ -5141,11 +6703,19 @@ mod e2e {
         Clip {
             id: id.into(),
             source: Source::Color { color: hex.into() },
-            start, in_point: 0.0, out_point: len,
-            speed: Param::Static(1.0), reverse: false, gain: 1.0,
-            muted: false, effects: vec![],
-            motion: Motion::default(), blend: BlendMode::Normal,
-            channels: vec![], preserve_pitch: true, transition_in: None,
+            start,
+            in_point: 0.0,
+            out_point: len,
+            speed: Param::Static(1.0),
+            reverse: false,
+            gain: 1.0,
+            muted: false,
+            effects: vec![],
+            motion: Motion::default(),
+            blend: BlendMode::Normal,
+            channels: vec![],
+            preserve_pitch: true,
+            transition_in: None,
         }
     }
 
@@ -5153,13 +6723,17 @@ mod e2e {
     /// the corner falls back to the project background.
     #[test]
     fn motion_scale_shrinks_the_layer() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let mut clip = colour_clip("c", "red", 0.0, 1.0);
         clip.motion.scale = Param::Static(50.0);
 
         let project = Project {
             tracks: vec![track("V1", vec![clip])],
-            width: 320, height: 240, fps: 30,
+            width: 320,
+            height: 240,
+            fps: 30,
             background: "black".into(),
             ..Default::default()
         };
@@ -5169,14 +6743,22 @@ mod e2e {
 
         let centre = pixel_at(&out, 0.4, 320, 160, 120);
         let corner = pixel_at(&out, 0.4, 320, 8, 8);
-        assert!(centre.0 > 120 && centre.1 < 90, "centre should be red, got {centre:?}");
-        assert!(corner.0 < 60 && corner.1 < 60, "corner should be background, got {corner:?}");
+        assert!(
+            centre.0 > 120 && centre.1 < 90,
+            "centre should be red, got {centre:?}"
+        );
+        assert!(
+            corner.0 < 60 && corner.1 < 60,
+            "corner should be background, got {corner:?}"
+        );
     }
 
     /// Position must move the layer, not merely re-letterbox it.
     #[test]
     fn motion_position_moves_the_layer() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let mut clip = colour_clip("c", "red", 0.0, 1.0);
         clip.motion.scale = Param::Static(50.0);
         // Half the frame width to the left: the picture should clear the centre.
@@ -5184,7 +6766,9 @@ mod e2e {
 
         let project = Project {
             tracks: vec![track("V1", vec![clip])],
-            width: 320, height: 240, fps: 30,
+            width: 320,
+            height: 240,
+            fps: 30,
             background: "black".into(),
             ..Default::default()
         };
@@ -5194,24 +6778,44 @@ mod e2e {
 
         let left = pixel_at(&out, 0.4, 320, 50, 120);
         let centre = pixel_at(&out, 0.4, 320, 250, 120);
-        assert!(left.0 > 120 && left.1 < 90, "left should hold the picture, got {left:?}");
-        assert!(centre.0 < 60, "right of centre should be background, got {centre:?}");
+        assert!(
+            left.0 > 120 && left.1 < 90,
+            "left should hold the picture, got {left:?}"
+        );
+        assert!(
+            centre.0 < 60,
+            "right of centre should be background, got {centre:?}"
+        );
     }
 
     /// A keyframed position must differ between two times in the same render.
     #[test]
     fn motion_position_animates_over_time() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let mut clip = colour_clip("c", "red", 0.0, 2.0);
         clip.motion.scale = Param::Static(40.0);
-        clip.motion.x = Param::Animated { keyframes: vec![
-            Keyframe { time: 0.0, value: -110.0, easing: Easing::Linear },
-            Keyframe { time: 2.0, value: 110.0, easing: Easing::Linear },
-        ]};
+        clip.motion.x = Param::Animated {
+            keyframes: vec![
+                Keyframe {
+                    time: 0.0,
+                    value: -110.0,
+                    easing: Easing::Linear,
+                },
+                Keyframe {
+                    time: 2.0,
+                    value: 110.0,
+                    easing: Easing::Linear,
+                },
+            ],
+        };
 
         let project = Project {
             tracks: vec![track("V1", vec![clip])],
-            width: 320, height: 240, fps: 30,
+            width: 320,
+            height: 240,
+            fps: 30,
             background: "black".into(),
             ..Default::default()
         };
@@ -5222,15 +6826,26 @@ mod e2e {
         let early_left = pixel_at(&out, 0.2, 320, 55, 120);
         let late_left = pixel_at(&out, 1.8, 320, 55, 120);
         let late_right = pixel_at(&out, 1.8, 320, 265, 120);
-        assert!(early_left.0 > 120, "should start on the left, got {early_left:?}");
-        assert!(late_left.0 < 60, "should have left the left side, got {late_left:?}");
-        assert!(late_right.0 > 120, "should finish on the right, got {late_right:?}");
+        assert!(
+            early_left.0 > 120,
+            "should start on the left, got {early_left:?}"
+        );
+        assert!(
+            late_left.0 < 60,
+            "should have left the left side, got {late_left:?}"
+        );
+        assert!(
+            late_right.0 > 120,
+            "should finish on the right, got {late_right:?}"
+        );
     }
 
     /// Opacity composites against what is beneath rather than replacing it.
     #[test]
     fn motion_opacity_blends_with_the_layer_below() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let base = colour_clip("base", "white", 0.0, 1.0);
         let mut top = colour_clip("top", "black", 0.0, 1.0);
         top.motion.opacity = Param::Static(0.5);
@@ -5239,22 +6854,29 @@ mod e2e {
         t2.id = "t2".into();
         let project = Project {
             tracks: vec![track("V1", vec![base]), t2],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-motion-op-out.webm");
         render(&project, &preview_profile(), &out)
             .unwrap_or_else(|e| panic!("opacity render failed:\n{e}"));
 
         let mid = pixel_at(&out, 0.4, 320, 160, 120);
-        assert!(mid.0 > 80 && mid.0 < 190,
-                "half-opacity black over white should be grey, got {mid:?}");
+        assert!(
+            mid.0 > 80 && mid.0 < 190,
+            "half-opacity black over white should be grey, got {mid:?}"
+        );
     }
 
     /// A multiply blend of black over white must darken, which overlay alone
     /// would not do differently from a plain paste.
     #[test]
     fn blend_multiply_darkens() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let base = colour_clip("base", "white", 0.0, 1.0);
         let mut top = colour_clip("top", "gray", 0.0, 1.0);
         top.blend = BlendMode::Multiply;
@@ -5263,7 +6885,10 @@ mod e2e {
         t2.id = "t2".into();
         let project = Project {
             tracks: vec![track("V1", vec![base]), t2],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-blend-mult-out.webm");
         render(&project, &preview_profile(), &out)
@@ -5276,11 +6901,16 @@ mod e2e {
     /// A curve that lifts midtones must actually brighten the picture.
     #[test]
     fn renders_a_curve_that_brightens() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let plain = colour_clip("c", "gray", 0.0, 1.0);
         let project = Project {
             tracks: vec![track("V1", vec![plain.clone()])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let flat_out = scratch("odyssey-curve-flat-out.webm");
         render(&project, &preview_profile(), &flat_out).unwrap();
@@ -5289,38 +6919,52 @@ mod e2e {
         let mut lifted = plain;
         lifted.effects.push(Effect::Curves {
             master: vec![(0.0, 0.0), (0.5, 0.85), (1.0, 1.0)],
-            red: vec![], green: vec![], blue: vec![],
+            red: vec![],
+            green: vec![],
+            blue: vec![],
         });
         let project2 = Project {
             tracks: vec![track("V1", vec![lifted])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-curve-lift-out.webm");
         render(&project2, &preview_profile(), &out)
             .unwrap_or_else(|e| panic!("curve render failed:\n{e}"));
         let after = pixel_at(&out, 0.4, 320, 160, 120);
-        assert!(after.0 > before.0 + 15,
-                "the curve should brighten: {before:?} -> {after:?}");
+        assert!(
+            after.0 > before.0 + 15,
+            "the curve should brighten: {before:?} -> {after:?}"
+        );
     }
 
     /// An adjustment layer must darken what is beneath it, and only within
     /// the span it covers.
     #[test]
     fn renders_an_adjustment_layer_over_a_span() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let base = colour_clip("base", "white", 0.0, 3.0);
         let mut adj = colour_clip("adj", "white", 1.0, 1.0);
         adj.source = Source::Adjustment;
         adj.effects.push(Effect::Color {
-            brightness: Param::Static(-0.6), contrast: Param::Static(1.0),
-            saturation: Param::Static(1.0), gamma: Param::Static(1.0),
+            brightness: Param::Static(-0.6),
+            contrast: Param::Static(1.0),
+            saturation: Param::Static(1.0),
+            gamma: Param::Static(1.0),
         });
 
         let mut t2 = track("V2", vec![adj]);
         t2.id = "t2".into();
         let project = Project {
             tracks: vec![track("V1", vec![base]), t2],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-adjust-out.webm");
         render(&project, &preview_profile(), &out)
@@ -5329,15 +6973,21 @@ mod e2e {
         let before = pixel_at(&out, 0.4, 320, 160, 120);
         let during = pixel_at(&out, 1.5, 320, 160, 120);
         let after = pixel_at(&out, 2.6, 320, 160, 120);
-        assert!(during.0 + 20 < before.0,
-                "the adjustment should darken during its span: {before:?} -> {during:?}");
-        assert!(after.0 > during.0 + 20,
-                "and stop darkening after it: {during:?} -> {after:?}");
+        assert!(
+            during.0 + 20 < before.0,
+            "the adjustment should darken during its span: {before:?} -> {during:?}"
+        );
+        assert!(
+            after.0 > during.0 + 20,
+            "and stop darkening after it: {during:?} -> {after:?}"
+        );
     }
 
     #[test]
     fn renders_a_freeze_frame_as_a_still() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("freeze", 2.0);
         let dir = scratch("odyssey-stills");
         let png = freeze_frame(&src.to_string_lossy(), 1.0, &dir)
@@ -5348,32 +6998,51 @@ mod e2e {
         clip.source = Source::Still { path: png.clone() };
         let project = Project {
             tracks: vec![track("V1", vec![clip])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-still-out.webm");
         render(&project, &preview_profile(), &out)
             .unwrap_or_else(|e| panic!("still render failed:\n{e}"));
         let dur = probe_duration(Path::new(&out));
-        assert!((dur - 1.5).abs() < 0.35, "still should hold for its clip length, got {dur}");
+        assert!(
+            (dur - 1.5).abs() < 0.35,
+            "still should hold for its clip length, got {dur}"
+        );
         let _ = std::fs::remove_file(&png);
     }
 
     /// Two-pass stabilisation: analyse, then transform by the result.
     #[test]
     fn analyses_and_renders_stabilisation() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("stab", 1.0);
         let dir = scratch("odyssey-stab");
         let trf = analyse_stabilisation(&src.to_string_lossy(), &dir)
             .unwrap_or_else(|e| panic!("stabilisation analysis failed:\n{e}"));
-        assert!(std::fs::metadata(&trf).map(|m| m.len() > 0).unwrap_or(false),
-                "the analysis pass wrote nothing");
+        assert!(
+            std::fs::metadata(&trf)
+                .map(|m| m.len() > 0)
+                .unwrap_or(false),
+            "the analysis pass wrote nothing"
+        );
 
         let mut clip = clip("c", &src, 0.0, 0.0, 1.0);
-        clip.effects.push(Effect::Stabilize { trf: trf.clone(), smoothing: 10.0, zoom: 0.0 });
+        clip.effects.push(Effect::Stabilize {
+            trf: trf.clone(),
+            smoothing: 10.0,
+            zoom: 0.0,
+        });
         let project = Project {
             tracks: vec![track("V1", vec![clip])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-stab-out.webm");
         render(&project, &preview_profile(), &out)
@@ -5387,14 +7056,22 @@ mod e2e {
 
     #[test]
     fn renders_only_the_requested_zone() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("zone", 2.0);
         let project = Project {
-            tracks: vec![track("V1", vec![
-                clip("a", &src, 0.0, 0.0, 2.0),
-                clip("b", &src, 8.0, 0.0, 2.0),
-            ])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            tracks: vec![track(
+                "V1",
+                vec![
+                    clip("a", &src, 0.0, 0.0, 2.0),
+                    clip("b", &src, 8.0, 0.0, 2.0),
+                ],
+            )],
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         assert_eq!(project.duration(), 10.0);
         let out = scratch("odyssey-zone-out.webm");
@@ -5406,13 +7083,18 @@ mod e2e {
 
     #[test]
     fn renders_loudness_normalisation() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("loud", 1.0);
         let mut c = clip("c", &src, 0.0, 0.0, 1.0);
         c.effects.push(Effect::Loudness { target: -16.0 });
         let project = Project {
             tracks: vec![track("V1", vec![c])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-loud-out.webm");
         let rendered = render(&project, &preview_profile(), &out)
@@ -5422,18 +7104,29 @@ mod e2e {
 
     #[test]
     fn renders_denoise_and_colour_wheels() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("grade", 1.0);
         let mut c = clip("c", &src, 0.0, 0.0, 1.0);
         c.effects.push(Effect::Denoise { strength: 3.0 });
         c.effects.push(Effect::ColorWheels {
-            lift_r: Param::Static(0.05), lift_g: p_zero(), lift_b: p_zero(),
-            gamma_r: p_zero(), gamma_g: p_zero(), gamma_b: p_zero(),
-            gain_r: p_zero(), gain_g: p_zero(), gain_b: Param::Static(0.1),
+            lift_r: Param::Static(0.05),
+            lift_g: p_zero(),
+            lift_b: p_zero(),
+            gamma_r: p_zero(),
+            gamma_g: p_zero(),
+            gamma_b: p_zero(),
+            gain_r: p_zero(),
+            gain_g: p_zero(),
+            gain_b: Param::Static(0.1),
         });
         let project = Project {
             tracks: vec![track("V1", vec![c])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-grade-out.webm");
         render(&project, &preview_profile(), &out)
@@ -5444,16 +7137,24 @@ mod e2e {
     /// A dissolve must actually ramp the incoming clip up over the one below.
     #[test]
     fn renders_a_dissolve_between_overlapping_clips() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let under = colour_clip("under", "black", 0.0, 2.0);
         let mut over = colour_clip("over", "white", 0.0, 2.0);
-        over.transition_in = Some(Transition { kind: TransitionKind::Dissolve, duration: 1.5 });
+        over.transition_in = Some(Transition {
+            kind: TransitionKind::Dissolve,
+            duration: 1.5,
+        });
 
         let mut t2 = track("V2", vec![over]);
         t2.id = "t2".into();
         let project = Project {
             tracks: vec![track("V1", vec![under]), t2],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-dissolve-out.webm");
         render(&project, &preview_profile(), &out)
@@ -5461,13 +7162,17 @@ mod e2e {
 
         let early = pixel_at(&out, 0.15, 320, 160, 120);
         let late = pixel_at(&out, 1.45, 320, 160, 120);
-        assert!(late.0 > early.0 + 40,
-                "the incoming clip should rise over the dissolve: {early:?} -> {late:?}");
+        assert!(
+            late.0 > early.0 + 40,
+            "the incoming clip should rise over the dissolve: {early:?} -> {late:?}"
+        );
     }
 
     #[test]
     fn renders_a_ducked_mix() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let music = make_media("duckmusic", 2.0);
         let voice = make_media("duckvoice", 2.0);
         let mut m = track("A1", vec![clip("m", &music, 0.0, 0.0, 2.0)]);
@@ -5478,7 +7183,10 @@ mod e2e {
 
         let project = Project {
             tracks: vec![m, v],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-duck-out.webm");
         let rendered = render(&project, &preview_profile(), &out)
@@ -5488,23 +7196,45 @@ mod e2e {
 
     #[test]
     fn scene_detection_finds_a_hard_cut() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         // Two very different halves spliced together give one obvious cut.
         let a = scratch("odyssey-scene-a.mp4");
         let status = Command::new("ffmpeg")
-            .args(["-y", "-v", "error",
-                   "-f", "lavfi", "-i", "color=c=black:s=320x240:r=30:d=1",
-                   "-f", "lavfi", "-i", "color=c=white:s=320x240:r=30:d=1",
-                   "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]",
-                   "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p"])
-            .arg(&a).status().unwrap();
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=320x240:r=30:d=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=white:s=320x240:r=30:d=1",
+                "-filter_complex",
+                "[0:v][1:v]concat=n=2:v=1:a=0[v]",
+                "-map",
+                "[v]",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&a)
+            .status()
+            .unwrap();
         assert!(status.success());
 
         let cuts = detect_scenes(&a.to_string_lossy(), 0.3)
             .unwrap_or_else(|e| panic!("scene detection failed:\n{e}"));
         assert!(!cuts.is_empty(), "a black-to-white cut should be detected");
-        assert!(cuts.iter().any(|t| (*t - 1.0).abs() < 0.2),
-                "the cut should be near 1s, got {cuts:?}");
+        assert!(
+            cuts.iter().any(|t| (*t - 1.0).abs() < 0.2),
+            "the cut should be near 1s, got {cuts:?}"
+        );
     }
 
     /// Render every effect in turn and report which ffmpeg rejects.
@@ -5515,63 +7245,205 @@ mod e2e {
     /// first, so one broken filter does not hide the rest.
     #[test]
     fn every_effect_renders() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let _guard = super::tests::render_lock();
         let src = make_media("allfx", 1.0);
 
         let cases: Vec<(&str, Effect)> = vec![
-            ("flip", Effect::Flip { horizontal: true, vertical: true }),
-            ("pixelate", Effect::Pixelate { size: Param::Static(8.0) }),
+            (
+                "flip",
+                Effect::Flip {
+                    horizontal: true,
+                    vertical: true,
+                },
+            ),
+            (
+                "pixelate",
+                Effect::Pixelate {
+                    size: Param::Static(8.0),
+                },
+            ),
             ("invert", Effect::Invert),
             ("monochrome", Effect::Monochrome),
-            ("temperature", Effect::Temperature { kelvin: Param::Static(4000.0) }),
-            ("levels", Effect::Levels { black: Param::Static(0.05), white: Param::Static(0.9) }),
-            ("exposure", Effect::Exposure { stops: Param::Static(0.5) }),
+            (
+                "temperature",
+                Effect::Temperature {
+                    kelvin: Param::Static(4000.0),
+                },
+            ),
+            (
+                "levels",
+                Effect::Levels {
+                    black: Param::Static(0.05),
+                    white: Param::Static(0.9),
+                },
+            ),
+            (
+                "exposure",
+                Effect::Exposure {
+                    stops: Param::Static(0.5),
+                },
+            ),
             ("grain", Effect::Grain { strength: 10.0 }),
-            ("boxblur", Effect::BoxBlur { radius: Param::Static(3.0) }),
+            (
+                "boxblur",
+                Effect::BoxBlur {
+                    radius: Param::Static(3.0),
+                },
+            ),
             ("motionblur", Effect::MotionBlur { frames: 3.0 }),
-            ("edgedetect", Effect::EdgeDetect { low: 0.1, high: 0.4 }),
+            (
+                "edgedetect",
+                Effect::EdgeDetect {
+                    low: 0.1,
+                    high: 0.4,
+                },
+            ),
             ("emboss", Effect::Emboss),
             ("crisp", Effect::Crisp),
             ("deband", Effect::Deband),
             ("deflicker", Effect::Deflicker),
-            ("lenscorrect", Effect::LensCorrect { k1: Param::Static(-0.1), k2: Param::Static(0.0) }),
-            ("lumakey", Effect::LumaKey { threshold: Param::Static(0.1), tolerance: Param::Static(0.1) }),
-            ("despill", Effect::Despill { colour: "green".into(), amount: Param::Static(1.0) }),
-            ("chromashift", Effect::ChromaShift { x: Param::Static(2.0), y: Param::Static(0.0) }),
+            (
+                "lenscorrect",
+                Effect::LensCorrect {
+                    k1: Param::Static(-0.1),
+                    k2: Param::Static(0.0),
+                },
+            ),
+            (
+                "lumakey",
+                Effect::LumaKey {
+                    threshold: Param::Static(0.1),
+                    tolerance: Param::Static(0.1),
+                },
+            ),
+            (
+                "despill",
+                Effect::Despill {
+                    colour: "green".into(),
+                    amount: Param::Static(1.0),
+                },
+            ),
+            (
+                "chromashift",
+                Effect::ChromaShift {
+                    x: Param::Static(2.0),
+                    y: Param::Static(0.0),
+                },
+            ),
             ("reframe", Effect::Reframe { aspect: 1.0 }),
-            ("posterize", Effect::Posterize { levels: Param::Static(5.0) }),
-            ("curves", Effect::Curves {
-                master: vec![(0.0, 0.0), (0.5, 0.6), (1.0, 1.0)],
-                red: vec![], green: vec![], blue: vec![] }),
+            (
+                "posterize",
+                Effect::Posterize {
+                    levels: Param::Static(5.0),
+                },
+            ),
+            (
+                "curves",
+                Effect::Curves {
+                    master: vec![(0.0, 0.0), (0.5, 0.6), (1.0, 1.0)],
+                    red: vec![],
+                    green: vec![],
+                    blue: vec![],
+                },
+            ),
             ("denoise", Effect::Denoise { strength: 3.0 }),
-            ("vignette", Effect::Vignette { angle: Param::Static(0.6) }),
-            ("hue", Effect::Hue { degrees: Param::Static(30.0) }),
-            ("sharpen", Effect::Sharpen { amount: Param::Static(1.0) }),
-            ("blur", Effect::Blur { sigma: Param::Static(2.0) }),
-            ("chromakey", Effect::ChromaKey {
-                color: "green".into(),
-                similarity: Param::Static(0.2),
-                blend: Param::Static(0.05) }),
+            (
+                "vignette",
+                Effect::Vignette {
+                    angle: Param::Static(0.6),
+                },
+            ),
+            (
+                "hue",
+                Effect::Hue {
+                    degrees: Param::Static(30.0),
+                },
+            ),
+            (
+                "sharpen",
+                Effect::Sharpen {
+                    amount: Param::Static(1.0),
+                },
+            ),
+            (
+                "blur",
+                Effect::Blur {
+                    sigma: Param::Static(2.0),
+                },
+            ),
+            (
+                "chromakey",
+                Effect::ChromaKey {
+                    color: "green".into(),
+                    similarity: Param::Static(0.2),
+                    blend: Param::Static(0.05),
+                },
+            ),
         ];
 
         let audio_cases: Vec<(&str, Effect)> = vec![
-            ("echo", Effect::Echo { delay_ms: 200.0, decay: 0.4 }),
+            (
+                "echo",
+                Effect::Echo {
+                    delay_ms: 200.0,
+                    decay: 0.4,
+                },
+            ),
             ("chorus", Effect::Chorus { depth: 0.5 }),
             ("flanger", Effect::Flanger { depth: 2.0 }),
-            ("pitchshift", Effect::PitchShift { ratio: Param::Static(1.2) }),
+            (
+                "pitchshift",
+                Effect::PitchShift {
+                    ratio: Param::Static(1.2),
+                },
+            ),
             ("noisegate", Effect::NoiseGate { threshold: 0.02 }),
-            ("compressor", Effect::Compressor { threshold: 0.125, ratio: 4.0 }),
+            (
+                "compressor",
+                Effect::Compressor {
+                    threshold: 0.125,
+                    ratio: 4.0,
+                },
+            ),
             ("limiter", Effect::Limiter { ceiling: 0.9 }),
-            ("stereowidth", Effect::StereoWidth { amount: Param::Static(1.5) }),
+            (
+                "stereowidth",
+                Effect::StereoWidth {
+                    amount: Param::Static(1.5),
+                },
+            ),
             ("mono", Effect::Mono),
             ("swapchannels", Effect::SwapChannels),
             ("trimsilence", Effect::TrimSilence { threshold: 0.02 }),
             ("loudness", Effect::Loudness { target: -16.0 }),
-            ("highpass", Effect::Highpass { frequency: Param::Static(200.0) }),
-            ("lowpass", Effect::Lowpass { frequency: Param::Static(3000.0) }),
-            ("volume", Effect::Volume { level: Param::Static(0.8) }),
-            ("audiofade", Effect::AudioFade { in_secs: 0.2, out_secs: 0.2 }),
+            (
+                "highpass",
+                Effect::Highpass {
+                    frequency: Param::Static(200.0),
+                },
+            ),
+            (
+                "lowpass",
+                Effect::Lowpass {
+                    frequency: Param::Static(3000.0),
+                },
+            ),
+            (
+                "volume",
+                Effect::Volume {
+                    level: Param::Static(0.8),
+                },
+            ),
+            (
+                "audiofade",
+                Effect::AudioFade {
+                    in_secs: 0.2,
+                    out_secs: 0.2,
+                },
+            ),
         ];
 
         let mut failures: Vec<String> = Vec::new();
@@ -5580,7 +7452,10 @@ mod e2e {
             c.effects.push(effect);
             let project = Project {
                 tracks: vec![track("V1", vec![c])],
-                width: 160, height: 120, fps: 10, ..Default::default()
+                width: 160,
+                height: 120,
+                fps: 10,
+                ..Default::default()
             };
             let out = scratch(&format!("odyssey-fx-{name}.webm"));
             if let Err(e) = render(&project, &preview_profile(), &out) {
@@ -5591,8 +7466,12 @@ mod e2e {
             let _ = std::fs::remove_file(&out);
         }
 
-        assert!(failures.is_empty(), "ffmpeg rejected {} effect(s):\n{}",
-                failures.len(), failures.join("\n"));
+        assert!(
+            failures.is_empty(),
+            "ffmpeg rejected {} effect(s):\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
     }
 
     /// Regression test: plenty of real footage has no audio track, and the
@@ -5601,20 +7480,41 @@ mod e2e {
     /// filtergraph description", so a silent clip could not render at all.
     #[test]
     fn a_video_with_no_audio_renders() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let silent = scratch("odyssey-silent.mp4");
         let status = Command::new("ffmpeg")
-            .args(["-y", "-v", "error", "-f", "lavfi", "-i",
-                   "testsrc=size=64x48:rate=10:duration=1",
-                   "-c:v", "libx264", "-pix_fmt", "yuv420p"])
-            .arg(&silent).status().unwrap();
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x48:rate=10:duration=1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&silent)
+            .status()
+            .unwrap();
         assert!(status.success());
-        assert!(!crate::video::probe(&silent.to_string_lossy()).unwrap().has_audio,
-                "the fixture should be silent");
+        assert!(
+            !crate::video::probe(&silent.to_string_lossy())
+                .unwrap()
+                .has_audio,
+            "the fixture should be silent"
+        );
 
         let project = Project {
             tracks: vec![track("V1", vec![clip("c", &silent, 0.0, 0.0, 1.0)])],
-            width: 64, height: 48, fps: 10, ..Default::default()
+            width: 64,
+            height: 48,
+            fps: 10,
+            ..Default::default()
         };
         let out = scratch("odyssey-silent-out.webm");
         render(&project, &preview_profile(), &out)
@@ -5625,45 +7525,82 @@ mod e2e {
     /// And a silent clip mixed with one that has audio must still produce sound.
     #[test]
     fn a_silent_clip_beside_an_audible_one_still_mixes() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let silent = scratch("odyssey-silent2.mp4");
         Command::new("ffmpeg")
-            .args(["-y", "-v", "error", "-f", "lavfi", "-i",
-                   "testsrc=size=64x48:rate=10:duration=1",
-                   "-c:v", "libx264", "-pix_fmt", "yuv420p"])
-            .arg(&silent).status().unwrap();
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x48:rate=10:duration=1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&silent)
+            .status()
+            .unwrap();
         let audible = make_media("mixed", 1.0);
 
         let project = Project {
-            tracks: vec![track("V1", vec![
-                clip("a", &silent, 0.0, 0.0, 1.0),
-                clip("b", &audible, 1.0, 0.0, 1.0),
-            ])],
-            width: 64, height: 48, fps: 10, ..Default::default()
+            tracks: vec![track(
+                "V1",
+                vec![
+                    clip("a", &silent, 0.0, 0.0, 1.0),
+                    clip("b", &audible, 1.0, 0.0, 1.0),
+                ],
+            )],
+            width: 64,
+            height: 48,
+            fps: 10,
+            ..Default::default()
         };
         let out = scratch("odyssey-mixed-out.webm");
         let rendered = render(&project, &preview_profile(), &out)
             .unwrap_or_else(|e| panic!("mixed audio failed:\n{e}"));
-        assert!(probe_streams(Path::new(&rendered)).contains("audio"),
-                "the audible clip should still give the output sound");
+        assert!(
+            probe_streams(Path::new(&rendered)).contains("audio"),
+            "the audible clip should still give the output sound"
+        );
     }
 
     /// A preview chunk must render, be small, and come back from cache.
     #[test]
     fn renders_and_caches_a_preview_chunk() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("prev", 4.0);
         let mut c = clip("c", &src, 0.0, 0.0, 4.0);
         // A heavy stack is exactly why preview rendering exists.
         c.effects.push(Effect::Blur {
-            sigma: Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: 1.0, easing: Easing::Linear },
-                Keyframe { time: 4.0, value: 10.0, easing: Easing::Linear },
-            ]},
+            sigma: Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: 1.0,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: 4.0,
+                        value: 10.0,
+                        easing: Easing::Linear,
+                    },
+                ],
+            },
         });
         let project = Project {
             tracks: vec![track("V1", vec![c])],
-            width: 640, height: 480, fps: 30, ..Default::default()
+            width: 640,
+            height: 480,
+            fps: 30,
+            ..Default::default()
         };
 
         let dir = scratch("odyssey-preview-cache");
@@ -5675,7 +7612,10 @@ mod e2e {
         assert_eq!(chunk.width, 320, "scale applied");
         assert_eq!(chunk.height, 240);
         let dur = probe_duration(Path::new(&chunk.path));
-        assert!((dur - 2.0).abs() < 0.35, "chunk should cover the range: got {dur}");
+        assert!(
+            (dur - 2.0).abs() < 0.35,
+            "chunk should cover the range: got {dur}"
+        );
 
         // Second call must reuse the file rather than re-encode it.
         let before = std::fs::metadata(&chunk.path).unwrap().modified().unwrap();
@@ -5691,14 +7631,22 @@ mod e2e {
     /// The rendered chunk must reflect the slice, not the whole timeline.
     #[test]
     fn a_preview_chunk_covers_only_its_range() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("prevrange", 2.0);
         let project = Project {
-            tracks: vec![track("V1", vec![
-                clip("a", &src, 0.0, 0.0, 2.0),
-                clip("b", &src, 10.0, 0.0, 2.0),
-            ])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            tracks: vec![track(
+                "V1",
+                vec![
+                    clip("a", &src, 0.0, 0.0, 2.0),
+                    clip("b", &src, 10.0, 0.0, 2.0),
+                ],
+            )],
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         assert_eq!(project.duration(), 12.0);
 
@@ -5707,22 +7655,33 @@ mod e2e {
         let chunk = render_preview(&project, 10.0, 12.0, 0.5, &dir)
             .unwrap_or_else(|e| panic!("range preview failed:\n{e}"));
         let dur = probe_duration(Path::new(&chunk.path));
-        assert!((dur - 2.0).abs() < 0.35, "expected just the last 2s, got {dur}");
+        assert!(
+            (dur - 2.0).abs() < 0.35,
+            "expected just the last 2s, got {dur}"
+        );
         let _ = clear_previews(&dir);
     }
 
     #[test]
     fn renders_burned_and_embedded_subtitles() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("subs", 3.0);
         let cues = vec![Subtitle {
-            id: "1".into(), start: 0.5, end: 2.0, text: "Hello from Odyssey".into(),
+            id: "1".into(),
+            start: 0.5,
+            end: 2.0,
+            text: "Hello from Odyssey".into(),
         }];
 
         // Burned in.
         let mut burn = Project {
             tracks: vec![track("V1", vec![clip("c", &src, 0.0, 0.0, 3.0)])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         burn.subtitles = cues.clone();
         burn.subtitle_mode = SubtitleMode::Burn;
@@ -5738,15 +7697,22 @@ mod e2e {
         render(&embed, &fast_profile(), &out2)
             .unwrap_or_else(|e| panic!("embedded subtitles failed:\n{e}"));
         let streams = probe_streams(Path::new(&out2));
-        assert!(streams.contains("subtitle"), "no subtitle stream: {streams}");
+        assert!(
+            streams.contains("subtitle"),
+            "no subtitle stream: {streams}"
+        );
     }
 
     /// frei0r is the route to hundreds of effects; prove one actually renders.
     #[test]
     fn renders_a_frei0r_plugin() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         // Skip cleanly if this ffmpeg was built without frei0r.
-        let has = Command::new("ffmpeg").args(["-hide_banner", "-filters"]).output()
+        let has = Command::new("ffmpeg")
+            .args(["-hide_banner", "-filters"])
+            .output()
             .map(|o| String::from_utf8_lossy(&o.stdout).contains("frei0r"))
             .unwrap_or(false);
         if !has {
@@ -5761,7 +7727,10 @@ mod e2e {
         });
         let project = Project {
             tracks: vec![track("V1", vec![c])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         let out = scratch("odyssey-e2e-frei0r.mp4");
         render(&project, &fast_profile(), &out)
@@ -5771,24 +7740,40 @@ mod e2e {
     /// A clip on an audio track must contribute audio and no video.
     #[test]
     fn renders_a_clip_on_an_audio_track() {
-        if !ffmpeg_available() { return; }
+        if !ffmpeg_available() {
+            return;
+        }
         let src = make_media("aud", 2.0);
         let mut atrack = track("A1", vec![clip("c", &src, 0.0, 0.0, 2.0)]);
         atrack.kind = TrackKind::Audio;
         let vsrc = make_media("audv", 2.0);
         let project = Project {
             tracks: vec![track("V1", vec![clip("v", &vsrc, 0.0, 0.0, 2.0)]), atrack],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
-        let joined = render_args(&project, &fast_profile(), Path::new("/tmp/o.mp4"), None).unwrap().join(" ");
-        assert!(joined.contains("[a1]"), "audio-track clip produced no audio: {joined}");
-        assert!(!joined.contains("[v1]"), "audio-track clip must not produce video");
+        let joined = render_args(&project, &fast_profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            joined.contains("[a1]"),
+            "audio-track clip produced no audio: {joined}"
+        );
+        assert!(
+            !joined.contains("[v1]"),
+            "audio-track clip must not produce video"
+        );
 
         let out = scratch("odyssey-e2e-audiotrack.mp4");
         let rendered = render(&project, &fast_profile(), &out)
             .unwrap_or_else(|e| panic!("audio track render failed:\n{e}"));
         let streams = probe_streams(Path::new(&rendered));
-        assert!(streams.contains("audio") && streams.contains("video"), "{streams}");
+        assert!(
+            streams.contains("audio") && streams.contains("video"),
+            "{streams}"
+        );
     }
 
     #[test]
@@ -5800,13 +7785,15 @@ mod e2e {
         let a = make_media("profiles", 1.0);
         let project = Project {
             tracks: vec![track("V1", vec![clip("c", &a, 0.0, 0.0, 1.0)])],
-            width: 320, height: 240, fps: 30, ..Default::default()
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
         };
         // ProRes and VP9 are slow; cover the fast, broadly-used ones here.
         for id in ["mp4-h264-fast", "webm-vp9", "mp3-audio"] {
             let profile = render_profiles().into_iter().find(|p| p.id == id).unwrap();
-            let out = std::env::temp_dir()
-                .join(format!("odyssey-e2e-{id}.{}", profile.container));
+            let out = std::env::temp_dir().join(format!("odyssey-e2e-{id}.{}", profile.container));
             let rendered = render(&project, &profile, &out)
                 .unwrap_or_else(|e| panic!("profile {id} failed:\n{e}"));
             let streams = probe_streams(Path::new(&rendered));
@@ -5835,7 +7822,11 @@ mod frei0r_tests {
         for p in &plugins {
             assert!(!p.name.is_empty());
             assert!(!p.label.is_empty());
-            assert_eq!(sanitise_plugin(&p.name), p.name, "unsafe name leaked through");
+            assert_eq!(
+                sanitise_plugin(&p.name),
+                p.name,
+                "unsafe name leaked through"
+            );
         }
         eprintln!("  frei0r plugins found: {}", plugins.len());
     }
@@ -5850,8 +7841,8 @@ mod frei0r_tests {
 
 #[cfg(test)]
 mod proxy_contract {
-    use super::*;
     use super::tests::scratch;
+    use super::*;
     use std::io::Write;
 
     /// The contract that matters for proxies: the renderer must never read one.
@@ -5867,7 +7858,9 @@ mod proxy_contract {
 
         let clip = Clip {
             id: "c".into(),
-            source: Source::Media { path: original.to_string_lossy().to_string() },
+            source: Source::Media {
+                path: original.to_string_lossy().to_string(),
+            },
             start: 0.0,
             in_point: 0.0,
             out_point: 2.0,
@@ -5884,11 +7877,23 @@ mod proxy_contract {
         };
         let mut project = Project {
             tracks: vec![Track {
-                id: "t".into(), name: "V1".into(), kind: TrackKind::Video,
-                clips: vec![clip], muted: false, hidden: false, locked: false,
-                solo: false, volume: 1.0, opacity: 1.0, blend: BlendMode::Normal,
-                targeted: false, duck_under: None,
-                duck_threshold: 0.05, duck_ratio: 8.0, duck_attack: 20.0, duck_release: 300.0,
+                id: "t".into(),
+                name: "V1".into(),
+                kind: TrackKind::Video,
+                clips: vec![clip],
+                muted: false,
+                hidden: false,
+                locked: false,
+                solo: false,
+                volume: 1.0,
+                opacity: 1.0,
+                blend: BlendMode::Normal,
+                targeted: false,
+                duck_under: None,
+                duck_threshold: 0.05,
+                duck_ratio: 8.0,
+                duck_attack: 20.0,
+                duck_release: 300.0,
             }],
             ..Default::default()
         };
@@ -5912,7 +7917,10 @@ mod proxy_contract {
             .unwrap()
             .join(" ");
 
-        assert!(joined.contains("odyssey-contract-original"), "original must be read");
+        assert!(
+            joined.contains("odyssey-contract-original"),
+            "original must be read"
+        );
         assert!(
             !joined.contains("odyssey-contract-proxy"),
             "a proxy must never reach the renderer: {joined}"
@@ -5922,8 +7930,8 @@ mod proxy_contract {
 
 #[cfg(test)]
 mod webview_playback {
-    use super::*;
     use super::tests::scratch;
+    use super::*;
 
     /// Regression test for a black monitor.
     ///
@@ -5934,8 +7942,14 @@ mod webview_playback {
     #[test]
     fn the_preview_profile_is_decodable_by_a_webview() {
         let p = preview_profile();
-        assert_eq!(p.container, "webm", "previews must be in a webview-friendly container");
-        assert!(p.video_codec.starts_with("libvpx"), "H.264 previews go black without gst-libav");
+        assert_eq!(
+            p.container, "webm",
+            "previews must be in a webview-friendly container"
+        );
+        assert!(
+            p.video_codec.starts_with("libvpx"),
+            "H.264 previews go black without gst-libav"
+        );
         assert_eq!(p.audio_codec, "libopus");
     }
 
@@ -5943,7 +7957,10 @@ mod webview_playback {
     #[test]
     fn export_profiles_still_offer_h264() {
         let ids: Vec<String> = render_profiles().into_iter().map(|p| p.id).collect();
-        assert!(ids.iter().any(|id| id.contains("h264")), "export must still offer H.264: {ids:?}");
+        assert!(
+            ids.iter().any(|id| id.contains("h264")),
+            "export must still offer H.264: {ids:?}"
+        );
         assert!(ids.iter().any(|id| id.contains("prores")), "and ProRes");
     }
 
@@ -5953,32 +7970,63 @@ mod webview_playback {
     fn vp8_renders_get_their_speed_flags() {
         use std::io::Write;
         let src = scratch("odyssey-vp8flags.mp4");
-        std::fs::File::create(&src).unwrap().write_all(b"x").unwrap();
+        std::fs::File::create(&src)
+            .unwrap()
+            .write_all(b"x")
+            .unwrap();
 
         let project = Project {
             tracks: vec![Track {
-                id: "t".into(), name: "V1".into(), kind: TrackKind::Video,
+                id: "t".into(),
+                name: "V1".into(),
+                kind: TrackKind::Video,
                 clips: vec![Clip {
                     id: "c".into(),
-                    source: Source::Media { path: src.to_string_lossy().to_string() },
-                    start: 0.0, in_point: 0.0, out_point: 2.0,
-                    speed: Param::Static(1.0), reverse: false, gain: 1.0,
-                    muted: false, effects: vec![],
-                    motion: Motion::default(), blend: BlendMode::Normal,
-            channels: vec![], preserve_pitch: true, transition_in: None,
+                    source: Source::Media {
+                        path: src.to_string_lossy().to_string(),
+                    },
+                    start: 0.0,
+                    in_point: 0.0,
+                    out_point: 2.0,
+                    speed: Param::Static(1.0),
+                    reverse: false,
+                    gain: 1.0,
+                    muted: false,
+                    effects: vec![],
+                    motion: Motion::default(),
+                    blend: BlendMode::Normal,
+                    channels: vec![],
+                    preserve_pitch: true,
+                    transition_in: None,
                 }],
-                muted: false, hidden: false, locked: false, solo: false, volume: 1.0,
-                opacity: 1.0, blend: BlendMode::Normal, targeted: false, duck_under: None,
-                duck_threshold: 0.05, duck_ratio: 8.0, duck_attack: 20.0, duck_release: 300.0,
+                muted: false,
+                hidden: false,
+                locked: false,
+                solo: false,
+                volume: 1.0,
+                opacity: 1.0,
+                blend: BlendMode::Normal,
+                targeted: false,
+                duck_under: None,
+                duck_threshold: 0.05,
+                duck_ratio: 8.0,
+                duck_attack: 20.0,
+                duck_release: 300.0,
             }],
             ..Default::default()
         };
         let joined = render_args(&project, &preview_profile(), Path::new("/tmp/o.webm"), None)
             .unwrap()
             .join(" ");
-        assert!(joined.contains("-deadline realtime"), "missing speed flags: {joined}");
+        assert!(
+            joined.contains("-deadline realtime"),
+            "missing speed flags: {joined}"
+        );
         assert!(joined.contains("-cpu-used 8"));
-        assert!(joined.contains("-b:v 0"), "libvpx CRF needs a zero target bitrate");
+        assert!(
+            joined.contains("-b:v 0"),
+            "libvpx CRF needs a zero target bitrate"
+        );
     }
 }
 
@@ -5987,27 +8035,51 @@ mod webview_playback {
 /// rather than an impression. Run with `cargo test stress -- --nocapture`.
 #[cfg(test)]
 mod stress {
-    use super::*;
     use super::tests::scratch;
+    use super::*;
     use std::time::Instant;
 
-    fn media(path: &PathBuf, id: &str, start: f64, len: f64) -> Clip {
+    fn media(path: &Path, id: &str, start: f64, len: f64) -> Clip {
         Clip {
             id: id.into(),
-            source: Source::Media { path: path.to_string_lossy().to_string() },
-            start, in_point: 0.0, out_point: len,
-            speed: Param::Static(1.0), reverse: false, channels: vec![],
-            preserve_pitch: true, gain: 1.0, muted: false, effects: vec![],
-            motion: Motion::default(), blend: BlendMode::Normal, transition_in: None,
+            source: Source::Media {
+                path: path.to_string_lossy().to_string(),
+            },
+            start,
+            in_point: 0.0,
+            out_point: len,
+            speed: Param::Static(1.0),
+            reverse: false,
+            channels: vec![],
+            preserve_pitch: true,
+            gain: 1.0,
+            muted: false,
+            effects: vec![],
+            motion: Motion::default(),
+            blend: BlendMode::Normal,
+            transition_in: None,
         }
     }
 
     fn track_of(id: &str, clips: Vec<Clip>) -> Track {
         Track {
-            id: id.into(), name: id.into(), kind: TrackKind::Video, clips,
-            muted: false, hidden: false, locked: false, solo: false, volume: 1.0,
-            opacity: 1.0, blend: BlendMode::Normal, targeted: false, duck_under: None,
-            duck_threshold: 0.05, duck_ratio: 8.0, duck_attack: 20.0, duck_release: 300.0,
+            id: id.into(),
+            name: id.into(),
+            kind: TrackKind::Video,
+            clips,
+            muted: false,
+            hidden: false,
+            locked: false,
+            solo: false,
+            volume: 1.0,
+            opacity: 1.0,
+            blend: BlendMode::Normal,
+            targeted: false,
+            duck_under: None,
+            duck_threshold: 0.05,
+            duck_ratio: 8.0,
+            duck_attack: 20.0,
+            duck_release: 300.0,
         }
     }
 
@@ -6032,12 +8104,20 @@ mod stress {
                 .collect();
             let project = Project {
                 tracks: vec![track_of("V1", clips)],
-                width: 1920, height: 1080, fps: 30, ..Default::default()
+                width: 1920,
+                height: 1080,
+                fps: 30,
+                ..Default::default()
             };
 
             let t = Instant::now();
-            let args = render_args(&project, &profile_for_stress(), Path::new("/tmp/x.mp4"), None)
-                .expect("a large timeline must still compile");
+            let args = render_args(
+                &project,
+                &profile_for_stress(),
+                Path::new("/tmp/x.mp4"),
+                None,
+            )
+            .expect("a large timeline must still compile");
             let ms = t.elapsed().as_secs_f64() * 1000.0;
             let graph_len = args
                 .iter()
@@ -6045,8 +8125,10 @@ mod stress {
                 .map(|i| args[i + 1].len())
                 .unwrap_or(0);
 
-            eprintln!("  {count:>5} clips: {ms:>8.1} ms, filter graph {graph_len:>9} chars, {} args",
-                      args.len());
+            eprintln!(
+                "  {count:>5} clips: {ms:>8.1} ms, filter graph {graph_len:>9} chars, {} args",
+                args.len()
+            );
             assert!(ms < 5000.0, "{count} clips took {ms:.0} ms to compile");
         }
     }
@@ -6072,14 +8154,25 @@ mod stress {
                         })
                         .collect(),
                 },
-                contrast: p_one(), saturation: p_one(), gamma: p_one(),
+                contrast: p_one(),
+                saturation: p_one(),
+                gamma: p_one(),
             });
             let project = Project {
                 tracks: vec![track_of("V1", vec![c])],
-                width: 1920, height: 1080, fps: 30, ..Default::default()
+                width: 1920,
+                height: 1080,
+                fps: 30,
+                ..Default::default()
             };
             let t = Instant::now();
-            let args = render_args(&project, &profile_for_stress(), Path::new("/tmp/x.mp4"), None).unwrap();
+            let args = render_args(
+                &project,
+                &profile_for_stress(),
+                Path::new("/tmp/x.mp4"),
+                None,
+            )
+            .unwrap();
             let ms = t.elapsed().as_secs_f64() * 1000.0;
             let graph = args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].len();
             eprintln!("  {count:>5} keyframes: {ms:>8.1} ms, expression graph {graph:>9} chars");
@@ -6096,22 +8189,44 @@ mod stress {
             let len = minutes as f64 * 60.0;
             let mut c = media(&src, "c", 0.0, len);
             c.effects.push(Effect::Blur {
-                sigma: Param::Animated { keyframes: vec![
-                    Keyframe { time: 0.0, value: 0.0, easing: Easing::Linear },
-                    Keyframe { time: len, value: 20.0, easing: Easing::Linear },
-                ]},
+                sigma: Param::Animated {
+                    keyframes: vec![
+                        Keyframe {
+                            time: 0.0,
+                            value: 0.0,
+                            easing: Easing::Linear,
+                        },
+                        Keyframe {
+                            time: len,
+                            value: 20.0,
+                            easing: Easing::Linear,
+                        },
+                    ],
+                },
             });
             let project = Project {
                 tracks: vec![track_of("V1", vec![c])],
-                width: 1920, height: 1080, fps: 60, ..Default::default()
+                width: 1920,
+                height: 1080,
+                fps: 60,
+                ..Default::default()
             };
             let t = Instant::now();
-            let args = render_args(&project, &profile_for_stress(), Path::new("/tmp/x.mp4"), None).unwrap();
+            let args = render_args(
+                &project,
+                &profile_for_stress(),
+                Path::new("/tmp/x.mp4"),
+                None,
+            )
+            .unwrap();
             let ms = t.elapsed().as_secs_f64() * 1000.0;
             let graph = &args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1];
             let commands = graph.matches("gblur sigma").count();
             eprintln!("  {minutes:>3} min clip at 60fps: {ms:>7.1} ms, {commands} commands");
-            assert!(commands <= MAX_SAMPLES, "command stream not capped: {commands}");
+            assert!(
+                commands <= MAX_SAMPLES,
+                "command stream not capped: {commands}"
+            );
         }
     }
 
@@ -6121,13 +8236,33 @@ mod stress {
         let src = source();
         for tracks in [2usize, 10, 50] {
             let ts: Vec<Track> = (0..tracks)
-                .map(|i| track_of(&format!("V{i}"), vec![media(&src, &format!("c{i}"), 0.0, 5.0)]))
+                .map(|i| {
+                    track_of(
+                        &format!("V{i}"),
+                        vec![media(&src, &format!("c{i}"), 0.0, 5.0)],
+                    )
+                })
                 .collect();
-            let project = Project { tracks: ts, width: 1920, height: 1080, fps: 30, ..Default::default() };
+            let project = Project {
+                tracks: ts,
+                width: 1920,
+                height: 1080,
+                fps: 30,
+                ..Default::default()
+            };
             let t = Instant::now();
-            let args = render_args(&project, &profile_for_stress(), Path::new("/tmp/x.mp4"), None).unwrap();
+            let args = render_args(
+                &project,
+                &profile_for_stress(),
+                Path::new("/tmp/x.mp4"),
+                None,
+            )
+            .unwrap();
             let ms = t.elapsed().as_secs_f64() * 1000.0;
-            eprintln!("  {tracks:>3} tracks: {ms:>7.1} ms, {} inputs", args.iter().filter(|a| *a == "-i").count());
+            eprintln!(
+                "  {tracks:>3} tracks: {ms:>7.1} ms, {} inputs",
+                args.iter().filter(|a| *a == "-i").count()
+            );
             assert!(ms < 5000.0);
         }
     }
@@ -6139,20 +8274,41 @@ mod stress {
         let src = source();
         for len in [2.0f64, 10.0, 30.0] {
             let mut c = media(&src, "c", 0.0, len);
-            c.speed = Param::Animated { keyframes: vec![
-                Keyframe { time: 0.0, value: 1.0, easing: Easing::Linear },
-                Keyframe { time: len, value: 4.0, easing: Easing::Linear },
-            ]};
+            c.speed = Param::Animated {
+                keyframes: vec![
+                    Keyframe {
+                        time: 0.0,
+                        value: 1.0,
+                        easing: Easing::Linear,
+                    },
+                    Keyframe {
+                        time: len,
+                        value: 4.0,
+                        easing: Easing::Linear,
+                    },
+                ],
+            };
             let segments = c.segments().len();
             let project = Project {
                 tracks: vec![track_of("V1", vec![c])],
-                width: 1920, height: 1080, fps: 30, ..Default::default()
+                width: 1920,
+                height: 1080,
+                fps: 30,
+                ..Default::default()
             };
             let t = Instant::now();
-            let args = render_args(&project, &profile_for_stress(), Path::new("/tmp/x.mp4"), None).unwrap();
+            let args = render_args(
+                &project,
+                &profile_for_stress(),
+                Path::new("/tmp/x.mp4"),
+                None,
+            )
+            .unwrap();
             let ms = t.elapsed().as_secs_f64() * 1000.0;
             let inputs = args.iter().filter(|a| *a == "-i").count();
-            eprintln!("  {len:>4.0}s ramp: {segments} segments -> {inputs} ffmpeg inputs, {ms:.1} ms");
+            eprintln!(
+                "  {len:>4.0}s ramp: {segments} segments -> {inputs} ffmpeg inputs, {ms:.1} ms"
+            );
             assert_eq!(inputs, segments, "one input per segment");
             assert!(segments <= MAX_SPEED_SEGMENTS);
         }
@@ -6166,16 +8322,30 @@ mod stress {
     /// crosses that, so the graph has to be spilled to a file.
     #[test]
     fn a_large_timeline_actually_renders() {
-        if Command::new("ffmpeg").arg("-version").output().is_err() { return; }
+        if Command::new("ffmpeg").arg("-version").output().is_err() {
+            return;
+        }
         let _guard = super::tests::render_lock();
 
         // Build real media once, then place it many times.
         let src = scratch("stress-media.mp4");
         let status = Command::new("ffmpeg")
-            .args(["-y", "-v", "error", "-f", "lavfi", "-i",
-                   "testsrc=size=64x48:rate=10:duration=0.4",
-                   "-c:v", "libx264", "-pix_fmt", "yuv420p"])
-            .arg(&src).status().expect("ffmpeg should run");
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x48:rate=10:duration=0.4",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&src)
+            .status()
+            .expect("ffmpeg should run");
         assert!(status.success());
 
         for count in [50usize, 300] {
@@ -6184,11 +8354,15 @@ mod stress {
                 .collect();
             let project = Project {
                 tracks: vec![track_of("V1", clips)],
-                width: 64, height: 48, fps: 10, ..Default::default()
+                width: 64,
+                height: 48,
+                fps: 10,
+                ..Default::default()
             };
 
             let graph_len = {
-                let a = render_args(&project, &preview_profile(), Path::new("/tmp/x.webm"), None).unwrap();
+                let a = render_args(&project, &preview_profile(), Path::new("/tmp/x.webm"), None)
+                    .unwrap();
                 a[a.iter().position(|x| x == "-filter_complex").unwrap() + 1].len()
             };
 
@@ -6198,10 +8372,16 @@ mod stress {
             let secs = started.elapsed().as_secs_f64();
 
             match &result {
-                Ok(_) => eprintln!("  {count:>4} clips: graph {graph_len:>7} chars, rendered in {secs:>6.1}s"),
+                Ok(_) => eprintln!(
+                    "  {count:>4} clips: graph {graph_len:>7} chars, rendered in {secs:>6.1}s"
+                ),
                 Err(e) => eprintln!("  {count:>4} clips: graph {graph_len:>7} chars, FAILED: {e}"),
             }
-            assert!(result.is_ok(), "{count} clips failed to render: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "{count} clips failed to render: {:?}",
+                result.err()
+            );
             let _ = std::fs::remove_file(&out);
         }
     }
@@ -6216,13 +8396,22 @@ mod stress {
                 .collect();
             let project = Project {
                 tracks: vec![track_of("V1", clips)],
-                width: 1920, height: 1080, fps: 30, ..Default::default()
+                width: 1920,
+                height: 1080,
+                fps: 30,
+                ..Default::default()
             };
             let json = serde_json::to_string(&project).unwrap();
             let per_snapshot = json.len();
-            eprintln!("  {count:>5} clips: snapshot {:>8} KB, 100 undo levels = {:>6} MB",
-                      per_snapshot / 1024, per_snapshot * 100 / 1_048_576);
-            assert!(per_snapshot * 100 < 512 * 1_048_576, "undo history would exceed 512 MB");
+            eprintln!(
+                "  {count:>5} clips: snapshot {:>8} KB, 100 undo levels = {:>6} MB",
+                per_snapshot / 1024,
+                per_snapshot * 100 / 1_048_576
+            );
+            assert!(
+                per_snapshot * 100 < 512 * 1_048_576,
+                "undo history would exceed 512 MB"
+            );
         }
     }
 }
