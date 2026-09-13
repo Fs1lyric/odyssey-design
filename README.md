@@ -1,6 +1,6 @@
 # Odyssey Design
 
-[![CI](https://github.com/lyric/odyssey-design/actions/workflows/ci.yml/badge.svg)](https://github.com/lyric/odyssey-design/actions/workflows/ci.yml)
+[![CI](https://github.com/Fs1lyric/odyssey-design/actions/workflows/ci.yml/badge.svg)](https://github.com/Fs1lyric/odyssey-design/actions/workflows/ci.yml)
 
 A local-first desktop app for documents, spreadsheets, decks and video.
 Everything is stored on your machine in SQLite. There is no account, no server
