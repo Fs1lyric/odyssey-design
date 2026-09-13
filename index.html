@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#FAFAFB" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#101216" media="(prefers-color-scheme: dark)" />
+    <title>Odyssey Design</title>
+    <link rel="stylesheet" href="/src/phosphor.css" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#surface">Skip to editor</a>
+
+    <div class="app">
+      <!-- Left rail: the library, grouped by document kind. -->
+      <nav class="rail" aria-label="Library">
+        <div class="rail__brand">
+          <i class="ph ph-film-strip rail__mark" aria-hidden="true"></i>
+          <span class="rail__name">Odyssey<span class="rail__sub">Design</span></span>
+        </div>
+
+        <div class="rail__new">
+          <button type="button" class="btn btn--primary" data-new="doc">
+            <i class="ph ph-file-text" aria-hidden="true"></i>New document
+          </button>
+          <div class="rail__newrow">
+            <button type="button" class="btn" data-new="sheet"><i class="ph ph-table" aria-hidden="true"></i>Sheet</button>
+            <button type="button" class="btn" data-new="slide"><i class="ph ph-presentation-chart" aria-hidden="true"></i>Deck</button>
+            <button type="button" class="btn" data-new="video"><i class="ph ph-film-strip" aria-hidden="true"></i>Video</button>
+          </div>
+        </div>
+
+        <label class="field field--search">
+          <span class="field__label">Search library</span>
+          <input type="search" id="search" placeholder="Title or contents…" autocomplete="off" />
+        </label>
+
+        <div class="rail__list" id="library" role="list" aria-live="polite">
+          <!-- Populated by main.ts -->
+        </div>
+
+        <footer class="rail__foot">
+          <button type="button" class="btn btn--quiet" id="theme-toggle" aria-pressed="false">
+            Switch theme
+          </button>
+        </footer>
+      </nav>
+
+      <!-- The work surface. One document at a time, whatever its kind. -->
+      <main class="surface" id="surface" tabindex="-1">
+        <header class="topbar">
+          <label class="field field--title">
+            <span class="field__label">Document title</span>
+            <input type="text" id="doc-title" placeholder="Untitled" autocomplete="off" />
+          </label>
+          <div class="topbar__meta">
+            <span class="badge" id="doc-kind"></span>
+            <span class="savestate" id="savestate" role="status" aria-live="polite"></span>
+          </div>
+        </header>
+
+        <div class="editor" id="editor">
+          <div class="empty" id="empty">
+            <h1 class="empty__title">Nothing open</h1>
+            <p class="empty__body">
+              Create a document, sheet or deck from the left rail. Everything is stored
+              locally on this machine. There is no account and no server.
+            </p>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
