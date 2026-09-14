@@ -75,8 +75,14 @@
   --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
 
   /* Shape lock */
-  --r:    6px;
-  --r-sm: 4px;
+  /* Radius scale, and the rule that governs it: containers use --r, controls
+     and inset chrome use --r-sm, anything whose own height is smaller than the
+     scale (meters, dots, the 3px render bar) uses --r-pill so it reads as a
+     capsule instead of a rounded rectangle. Full-bleed media surfaces reset to
+     0 deliberately. Nothing else invents a radius. */
+  --r:      6px;
+  --r-sm:   4px;
+  --r-pill: 999px;
 
   --lane-h:   66px;
   --rail-w:   248px;
@@ -98,7 +104,7 @@
     --ink-3:       #939CAB;
 
     --line:        #272C34;
-    --line-strong: #3A414C;
+    --line-strong: #626E80;
 
     --accent:      #6E9BF0;
     --accent-ink:  #0C1220;
@@ -109,6 +115,17 @@
     --warn:        #D9A441;
     --danger:      #F0857A;
     --danger-weak: #331917;
+
+  /* Media-stage surfaces. Presentation and the video monitor sit darker than
+     the chrome so the image reads against a neutral surround; they are their
+     own tokens rather than local re-definitions of --surface, so the palette
+     stays single-source. */
+  --stage:       #0B0D11;
+  --stage-deep:  #06080B;
+  /* Text and waveforms drawn over decoded video, where the backdrop is
+     arbitrary and the chrome tokens cannot be trusted for contrast. */
+  --ink-on-media:  #F3F6FA;
+  --wave-on-media: #9DC1FF;
 
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px rgb(0 0 0 / 0.45);
   }
@@ -125,7 +142,7 @@
   --ink-3:       #939CAB;
 
   --line:        #272C34;
-  --line-strong: #3A414C;
+  --line-strong: #626E80;
 
   --accent:      #6E9BF0;
   --accent-ink:  #0C1220;
@@ -136,6 +153,17 @@
   --warn:        #D9A441;
   --danger:      #F0857A;
   --danger-weak: #331917;
+
+  /* Media-stage surfaces. Presentation and the video monitor sit darker than
+     the chrome so the image reads against a neutral surround; they are their
+     own tokens rather than local re-definitions of --surface, so the palette
+     stays single-source. */
+  --stage:       #0B0D11;
+  --stage-deep:  #06080B;
+  /* Text and waveforms drawn over decoded video, where the backdrop is
+     arbitrary and the chrome tokens cannot be trusted for contrast. */
+  --ink-on-media:  #F3F6FA;
+  --wave-on-media: #9DC1FF;
 
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px rgb(0 0 0 / 0.45);
 }
@@ -699,10 +727,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   inset: 0;
   z-index: 50;
   grid-template-columns: 1fr;
-  --surface: #0B0D11;
-  --ink: #F2F5F9;
-  --ink-2: #B4BECD;
-  background: #0B0D11;
+  background: var(--stage);
 }
 .deck.is-presenting .deck__filmstrip { display: none; }
 .deck.is-presenting .slide { box-shadow: none; max-width: 100%; }
@@ -740,7 +765,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   min-width: 0;
   min-height: 0;
   padding: var(--s4);
-  background: #0B0D11;
+  background: var(--stage);
   overflow: hidden;
 }
 
@@ -749,7 +774,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   max-height: 100%;
   width: auto;
   height: auto;
-  background: #000;
+  background: var(--stage-deep);
   border-radius: var(--r-sm);
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
 }
@@ -900,7 +925,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   pointer-events: none;
 }
 .vid__clip.has-thumb .vid__cliplabel,
-.vid__clip.has-thumb .vid__clipfx { position: relative; color: #F3F6FA; }
+.vid__clip.has-thumb .vid__clipfx { position: relative; color: var(--ink-on-media); }
 
 .vid__cliplabel {
   font-size: var(--t-xs);
@@ -1187,7 +1212,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   opacity: 0.8;
 }
 .vid__wave path { stroke: var(--accent); stroke-width: 1px; fill: none; }
-.vid__clip.has-thumb .vid__wave path { stroke: #9DC1FF; }
+.vid__clip.has-thumb .vid__wave path { stroke: var(--wave-on-media); }
 
 /* Rendered spans of the timeline, marked along the ruler. */
 .vid__rendered {
@@ -1196,7 +1221,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   bottom: 0;
   height: 3px;
   background: var(--ok);
-  border-radius: 2px;
+  border-radius: var(--r-pill);
   pointer-events: none;
 }
 
@@ -1290,7 +1315,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   padding: 0;
   margin-left: -5px;
   border: none;
-  border-radius: 2px 2px 0 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
   background: var(--marker, var(--accent));
   cursor: pointer;
 }
@@ -1321,7 +1346,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
 }
 .vid__scopetitle {
   font-size: var(--t-2xs);
-  color: #A6B2C4;
+  color: var(--ink-2);
 }
 .vid__scope canvas {
   display: block;
@@ -1334,7 +1359,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   top: 2px;
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: var(--r-pill);
   background: var(--surface);
   border: 2px solid var(--accent);
   cursor: ew-resize;
@@ -1378,7 +1403,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   top: var(--s2);
   left: var(--s2);
   font-size: var(--t-2xs);
-  color: #DCE4F0;
+  color: var(--ink);
   background: rgb(11 13 17 / 0.75);
   border-radius: var(--r-sm);
   padding: 1px 5px;
