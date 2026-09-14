@@ -4,7 +4,8 @@
 export type Easing =
   | "linear" | "hold" | "easein" | "easeout" | "easeinout"
   | "cubicin" | "cubicout" | "cubicinout" | "sinein" | "sineout"
-  | "backout" | "elasticout" | "bounceout";
+  | "backout" | "elasticout" | "bounceout"
+  | "backin" | "backinout" | "elasticin" | "elasticinout" | "bouncein" | "bounceinout" | "expoin" | "expoout" | "expoinout" | "circin" | "circout" | "circinout" | "quartin" | "quartout" | "quintout";
 
 export interface Keyframe {
   time: number;
@@ -117,7 +118,56 @@ export type Effect =
   | { kind: "exciter"; amount: Param }
   | { kind: "subboost"; amount: Param }
   | { kind: "speechnorm"; expansion: Param }
-  | { kind: "audiodenoise"; reduction: Param };
+  | { kind: "audiodenoise"; reduction: Param }
+  | { kind: "gradfun"; strength: Param; radius: Param }
+  | { kind: "removegrain"; mode: Param }
+  | { kind: "owdenoise"; depth: Param; luma: Param }
+  | { kind: "sobel"; scale: Param }
+  | { kind: "prewitt"; scale: Param }
+  | { kind: "roberts"; scale: Param }
+  | { kind: "kirsch"; scale: Param }
+  | { kind: "scharr"; scale: Param }
+  | { kind: "colorlevels"; black: Param; white: Param }
+  | { kind: "colorhold"; color: string; similarity: Param; blend: Param }
+  | { kind: "chromahold"; color: string; similarity: Param; blend: Param }
+  | { kind: "transpose"; dir: Param }
+  | { kind: "fillborders"; size: Param }
+  | { kind: "drawbox"; x: Param; y: Param; w: Param; h: Param; color: string; thickness: Param }
+  | { kind: "drawgrid"; spacing: Param; thickness: Param; color: string }
+  | { kind: "scroll"; horizontal: Param; vertical: Param }
+  | { kind: "photosensitivity"; factor: Param }
+  | { kind: "videolimiter"; min: Param; max: Param }
+  | { kind: "deflate"; threshold: Param }
+  | { kind: "inflate"; threshold: Param }
+  | { kind: "median"; radius: Param }
+  | { kind: "nlmeans"; strength: Param; patch: Param }
+  | { kind: "atadenoise"; size: Param }
+  | { kind: "hqdn3d"; luma: Param; chroma: Param }
+  | { kind: "swapuv" }
+  | { kind: "elbg"; codebook: Param }
+  | { kind: "shuffleplanes"; map0: Param; map1: Param; map2: Param }
+  | { kind: "allpass"; freq: Param; width: Param }
+  | { kind: "bandpass"; freq: Param; width: Param }
+  | { kind: "bandreject"; freq: Param; width: Param }
+  | { kind: "lowshelf"; gain: Param; freq: Param }
+  | { kind: "highshelf"; gain: Param; freq: Param }
+  | { kind: "crystalizer"; intensity: Param }
+  | { kind: "deesser"; intensity: Param }
+  | { kind: "dialogueenhance"; original: Param; enhance: Param }
+  | { kind: "earwax" }
+  | { kind: "extrastereo"; mult: Param }
+  | { kind: "stereotools"; balance: Param; level: Param }
+  | { kind: "stereowiden"; delay: Param; feedback: Param }
+  | { kind: "supereq"; low: Param; mid: Param; high: Param }
+  | { kind: "compand"; attack: Param; decay: Param }
+  | { kind: "compensationdelay"; millimetres: Param }
+  | { kind: "softclip"; amount: Param }
+  | { kind: "declick"; window: Param }
+  | { kind: "dynamiceq"; threshold: Param; ratio: Param }
+  | { kind: "pulsator"; hz: Param }
+  | { kind: "channelmixer"; rr: Param; gg: Param; bb: Param }
+  | { kind: "shufflepixels"; block: Param }
+  | { kind: "bwdeinterlace"; mode: Param };
 
 /** Intrinsic clip motion. Every clip has it, the way Premiere does. */
 export interface Motion {
@@ -135,7 +185,8 @@ export type BlendMode =
   | "colordodge" | "colorburn" | "hardlight" | "softlight"
   | "difference" | "exclusion" | "addition" | "subtract"
   | "linearlight" | "pinlight" | "vividlight" | "hardmix" | "divide"
-  | "glow" | "reflect" | "freeze" | "heat" | "negation" | "phoenix" | "grainmerge";
+  | "glow" | "reflect" | "freeze" | "heat" | "negation" | "phoenix" | "grainmerge"
+  | "and" | "or" | "xor" | "average" | "extremity" | "grainextract" | "addition128" | "difference128" | "multiply128" | "softdifference" | "geometric" | "harmonic" | "bleach" | "stain" | "interpolate" | "hardoverlay";
 
 export function defaultMotion(): Motion {
   return { x: 0, y: 0, scale: 100, rotation: 0, anchor_x: 0, anchor_y: 0, opacity: 1 };
@@ -178,6 +229,22 @@ export const BLEND_CANVAS: Record<BlendMode, GlobalCompositeOperation> = {
   negation: "source-over",
   phoenix: "source-over",
   grainmerge: "source-over",
+  and: "source-over",
+  or: "source-over",
+  xor: "source-over",
+  average: "source-over",
+  extremity: "source-over",
+  grainextract: "source-over",
+  addition128: "source-over",
+  difference128: "source-over",
+  multiply128: "source-over",
+  softdifference: "source-over",
+  geometric: "source-over",
+  harmonic: "source-over",
+  bleach: "source-over",
+  stain: "source-over",
+  interpolate: "source-over",
+  hardoverlay: "source-over",
 };
 
 export const BLEND_LABELS: Array<[BlendMode, string]> = [
@@ -192,6 +259,22 @@ export const BLEND_LABELS: Array<[BlendMode, string]> = [
   ["glow", "Glow"], ["reflect", "Reflect"], ["freeze", "Freeze"],
   ["heat", "Heat"], ["negation", "Negation"], ["phoenix", "Phoenix"],
   ["grainmerge", "Grain merge"],
+  ["and", "And"],
+  ["or", "Or"],
+  ["xor", "Xor"],
+  ["average", "Average"],
+  ["extremity", "Extremity"],
+  ["grainextract", "Grainextract"],
+  ["addition128", "Addition128"],
+  ["difference128", "Difference128"],
+  ["multiply128", "Multiply128"],
+  ["softdifference", "Softdifference"],
+  ["geometric", "Geometric"],
+  ["harmonic", "Harmonic"],
+  ["bleach", "Bleach"],
+  ["stain", "Stain"],
+  ["interpolate", "Interpolate"],
+  ["hardoverlay", "Hardoverlay"],
 ];
 
 /** Motion parameters the inspector shows, in Premiere's order. */
@@ -228,7 +311,8 @@ export type TransitionKind =
   | "wipeleft" | "wiperight" | "wipeup" | "wipedown" | "diagonalwipe"
   | "irisopen" | "irisclose" | "barndooropen" | "barndoorclose"
   | "clockwipe" | "pixeldissolve"
-  | "slideleft" | "slideright" | "slideup" | "slidedown";
+  | "slideleft" | "slideright" | "slideup" | "slidedown"
+  | "checkerboard" | "venetianblinds" | "splitvertical" | "splithorizontal" | "radialwipe" | "cornerwipetopleft" | "cornerwipetopright" | "rippledissolve" | "lumawipe" | "bandwipe" | "spiral" | "crosszoom";
 
 export interface Transition {
   kind: TransitionKind;
@@ -254,6 +338,18 @@ export const TRANSITION_LABELS: Array<[TransitionKind, string]> = [
   ["slideright", "Slide right"],
   ["slideup", "Slide up"],
   ["slidedown", "Slide down"],
+  ["checkerboard", "Checkerboard"],
+  ["venetianblinds", "Venetian blinds"],
+  ["splitvertical", "Split vertical"],
+  ["splithorizontal", "Split horizontal"],
+  ["radialwipe", "Radial wipe"],
+  ["cornerwipetopleft", "Corner wipe (top left)"],
+  ["cornerwipetopright", "Corner wipe (top right)"],
+  ["rippledissolve", "Ripple dissolve"],
+  ["lumawipe", "Luma wipe"],
+  ["bandwipe", "Band wipe"],
+  ["spiral", "Spiral"],
+  ["crosszoom", "Cross zoom"],
 ];
 
 export interface Track {
@@ -403,6 +499,16 @@ export function isAnimated(p: Param): p is { keyframes: Keyframe[] } {
   return typeof p !== "number" && Array.isArray(p.keyframes);
 }
 
+/** Shared by bouncein / bounceout / bounceinout. Mirrors bounce_out in timeline.rs. */
+function bounceOut(t: number): number {
+  const n = 7.5625, d = 2.75;
+  if (t < 1 / d) return n * t * t;
+  if (t < 2 / d) { const q = t - 1.5 / d; return n * q * q + 0.75; }
+  if (t < 2.5 / d) { const q = t - 2.25 / d; return n * q * q + 0.9375; }
+  const q = t - 2.625 / d;
+  return n * q * q + 0.984375;
+}
+
 function ease(p: number, e: Easing): number {
   const t = Math.min(1, Math.max(0, p));
   switch (e) {
@@ -421,14 +527,44 @@ function ease(p: number, e: Easing): number {
       if (t <= 0) return 0;
       if (t >= 1) return 1;
       return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1;
-    case "bounceout": {
-      const n = 7.5625, d = 2.75;
-      if (t < 1 / d) return n * t * t;
-      if (t < 2 / d) { const q = t - 1.5 / d; return n * q * q + 0.75; }
-      if (t < 2.5 / d) { const q = t - 2.25 / d; return n * q * q + 0.9375; }
-      const q = t - 2.625 / d;
-      return n * q * q + 0.984375;
+    case "bounceout": return bounceOut(t);
+    case "bouncein": return 1 - bounceOut(1 - t);
+    case "bounceinout":
+      return t < 0.5 ? (1 - bounceOut(1 - 2 * t)) / 2 : (1 + bounceOut(2 * t - 1)) / 2;
+    case "backin": return 2.70158 * t * t * t - 1.70158 * t * t;
+    case "backinout": {
+      const c2 = 2.5949095;
+      return t < 0.5
+        ? (Math.pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2)) / 2
+        : (Math.pow(2 * t - 2, 2) * ((c2 + 1) * (2 * t - 2) + c2) + 2) / 2;
     }
+    case "elasticin":
+      if (t <= 0) return 0;
+      if (t >= 1) return 1;
+      return -Math.pow(2, 10 * t - 10) * Math.sin((t * 10 - 10.75) * ((2 * Math.PI) / 3));
+    case "elasticinout": {
+      const c5 = (2 * Math.PI) / 4.5;
+      if (t <= 0) return 0;
+      if (t >= 1) return 1;
+      return t < 0.5
+        ? -(Math.pow(2, 20 * t - 10) * Math.sin((20 * t - 11.125) * c5)) / 2
+        : (Math.pow(2, -20 * t + 10) * Math.sin((20 * t - 11.125) * c5)) / 2 + 1;
+    }
+    case "expoin": return t <= 0 ? 0 : Math.pow(2, 10 * t - 10);
+    case "expoout": return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+    case "expoinout":
+      if (t <= 0) return 0;
+      if (t >= 1) return 1;
+      return t < 0.5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2;
+    case "circin": return 1 - Math.sqrt(Math.max(0, 1 - t * t));
+    case "circout": return Math.sqrt(Math.max(0, 1 - Math.pow(t - 1, 2)));
+    case "circinout":
+      return t < 0.5
+        ? (1 - Math.sqrt(Math.max(0, 1 - Math.pow(2 * t, 2)))) / 2
+        : (Math.sqrt(Math.max(0, 1 - Math.pow(-2 * t + 2, 2))) + 1) / 2;
+    case "quartin": return Math.pow(t, 4);
+    case "quartout": return 1 - Math.pow(1 - t, 4);
+    case "quintout": return 1 - Math.pow(1 - t, 5);
     default: return t;
   }
 }
@@ -750,6 +886,55 @@ export const EFFECT_CATALOGUE: Array<{ label: string; group: string; make: () =>
   { label: "Sub boost", group: "Audio", make: () => ({ kind: "subboost", amount: 0.5 }) },
   { label: "Speech normalise", group: "Audio", make: () => ({ kind: "speechnorm", expansion: 2 }) },
   { label: "Audio denoise", group: "Audio", make: () => ({ kind: "audiodenoise", reduction: 12 }) },
+  { label: "Gradfun", group: "Image", make: () => ({ kind: "gradfun", strength: 1.2, radius: 16.0 }) },
+  { label: "Remove grain", group: "Image", make: () => ({ kind: "removegrain", mode: 1.0 }) },
+  { label: "Ow denoise", group: "Image", make: () => ({ kind: "owdenoise", depth: 8.0, luma: 1.0 }) },
+  { label: "Sobel", group: "Image", make: () => ({ kind: "sobel", scale: 1.0 }) },
+  { label: "Prewitt", group: "Image", make: () => ({ kind: "prewitt", scale: 1.0 }) },
+  { label: "Roberts", group: "Image", make: () => ({ kind: "roberts", scale: 1.0 }) },
+  { label: "Kirsch", group: "Image", make: () => ({ kind: "kirsch", scale: 1.0 }) },
+  { label: "Scharr", group: "Image", make: () => ({ kind: "scharr", scale: 1.0 }) },
+  { label: "Color levels", group: "Image", make: () => ({ kind: "colorlevels", black: 0.05, white: 0.95 }) },
+  { label: "Color hold", group: "Image", make: () => ({ kind: "colorhold", color: "green", similarity: 0.3, blend: 0.1 }) },
+  { label: "Chroma hold", group: "Image", make: () => ({ kind: "chromahold", color: "green", similarity: 0.3, blend: 0.1 }) },
+  { label: "Transpose", group: "Image", make: () => ({ kind: "transpose", dir: 1.0 }) },
+  { label: "Fill borders", group: "Image", make: () => ({ kind: "fillborders", size: 4.0 }) },
+  { label: "Draw box", group: "Image", make: () => ({ kind: "drawbox", x: 10.0, y: 10.0, w: 60.0, h: 40.0, color: "white", thickness: 2.0 }) },
+  { label: "Draw grid", group: "Image", make: () => ({ kind: "drawgrid", spacing: 32.0, thickness: 1.0, color: "white" }) },
+  { label: "Scroll", group: "Image", make: () => ({ kind: "scroll", horizontal: 0.01, vertical: 0.0 }) },
+  { label: "Photosensitivity", group: "Image", make: () => ({ kind: "photosensitivity", factor: 1.0 }) },
+  { label: "Video limiter", group: "Image", make: () => ({ kind: "videolimiter", min: 16.0, max: 235.0 }) },
+  { label: "Deflate", group: "Image", make: () => ({ kind: "deflate", threshold: 50.0 }) },
+  { label: "Inflate", group: "Image", make: () => ({ kind: "inflate", threshold: 50.0 }) },
+  { label: "Median", group: "Image", make: () => ({ kind: "median", radius: 3.0 }) },
+  { label: "Nl means", group: "Image", make: () => ({ kind: "nlmeans", strength: 1.0, patch: 3.0 }) },
+  { label: "Ata denoise", group: "Image", make: () => ({ kind: "atadenoise", size: 9.0 }) },
+  { label: "Hqdn3d", group: "Image", make: () => ({ kind: "hqdn3d", luma: 4.0, chroma: 3.0 }) },
+  { label: "Swap uv", group: "Image", make: () => ({ kind: "swapuv" }) },
+  { label: "Elbg", group: "Image", make: () => ({ kind: "elbg", codebook: 8.0 }) },
+  { label: "Shuffle planes", group: "Image", make: () => ({ kind: "shuffleplanes", map0: 0.0, map1: 2.0, map2: 1.0 }) },
+  { label: "All pass", group: "Audio", make: () => ({ kind: "allpass", freq: 1000.0, width: 100.0 }) },
+  { label: "Band pass", group: "Audio", make: () => ({ kind: "bandpass", freq: 1000.0, width: 200.0 }) },
+  { label: "Band reject", group: "Audio", make: () => ({ kind: "bandreject", freq: 1000.0, width: 200.0 }) },
+  { label: "Low shelf", group: "Audio", make: () => ({ kind: "lowshelf", gain: 3.0, freq: 120.0 }) },
+  { label: "High shelf", group: "Audio", make: () => ({ kind: "highshelf", gain: 3.0, freq: 6000.0 }) },
+  { label: "Crystalizer", group: "Audio", make: () => ({ kind: "crystalizer", intensity: 2.0 }) },
+  { label: "De esser", group: "Audio", make: () => ({ kind: "deesser", intensity: 0.5 }) },
+  { label: "Dialogue enhance", group: "Audio", make: () => ({ kind: "dialogueenhance", original: 1.0, enhance: 1.0 }) },
+  { label: "Earwax", group: "Audio", make: () => ({ kind: "earwax" }) },
+  { label: "Extra stereo", group: "Audio", make: () => ({ kind: "extrastereo", mult: 2.5 }) },
+  { label: "Stereo tools", group: "Audio", make: () => ({ kind: "stereotools", balance: 0.0, level: 1.0 }) },
+  { label: "Stereo widen", group: "Audio", make: () => ({ kind: "stereowiden", delay: 20.0, feedback: 0.3 }) },
+  { label: "Super eq", group: "Audio", make: () => ({ kind: "supereq", low: 2.0, mid: 1.0, high: 2.0 }) },
+  { label: "Compand", group: "Audio", make: () => ({ kind: "compand", attack: 0.1, decay: 0.4 }) },
+  { label: "Compensation delay", group: "Audio", make: () => ({ kind: "compensationdelay", millimetres: 200.0 }) },
+  { label: "Soft clip", group: "Audio", make: () => ({ kind: "softclip", amount: 0.8 }) },
+  { label: "Declick", group: "Audio", make: () => ({ kind: "declick", window: 55.0 }) },
+  { label: "Dynamic eq", group: "Audio", make: () => ({ kind: "dynamiceq", threshold: 0.1, ratio: 2.0 }) },
+  { label: "Pulsator", group: "Audio", make: () => ({ kind: "pulsator", hz: 1.0 }) },
+  { label: "Channel mixer", group: "Image", make: () => ({ kind: "channelmixer", rr: 0.9, gg: 1.0, bb: 1.1 }) },
+  { label: "Shuffle pixels", group: "Image", make: () => ({ kind: "shufflepixels", block: 16.0 }) },
+  { label: "Bw deinterlace", group: "Image", make: () => ({ kind: "bwdeinterlace", mode: 0.0 }) },
 ];
 
 /** How each effect's parameters reach ffmpeg when animated. Mirrors

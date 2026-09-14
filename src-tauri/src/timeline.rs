@@ -61,6 +61,21 @@ pub enum Easing {
     BackOut,
     ElasticOut,
     BounceOut,
+    BackIn,
+    BackInOut,
+    ElasticIn,
+    ElasticInOut,
+    BounceIn,
+    BounceInOut,
+    ExpoIn,
+    ExpoOut,
+    ExpoInOut,
+    CircIn,
+    CircOut,
+    CircInOut,
+    QuartIn,
+    QuartOut,
+    QuintOut,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -215,6 +230,83 @@ fn ease(p: f64, e: Easing) -> f64 {
             }
         }
         Easing::BounceOut => bounce_out(p),
+        Easing::BackIn => 2.70158 * p * p * p - 1.70158 * p * p,
+        Easing::BackInOut => {
+            // c2 = c1 * 1.525, the standard in-out overshoot constant.
+            const C2: f64 = 2.5949095;
+            if p < 0.5 {
+                ((2.0 * p).powi(2) * ((C2 + 1.0) * 2.0 * p - C2)) / 2.0
+            } else {
+                ((2.0 * p - 2.0).powi(2) * ((C2 + 1.0) * (2.0 * p - 2.0) + C2) + 2.0) / 2.0
+            }
+        }
+        Easing::ElasticIn => {
+            if p <= 0.0 {
+                0.0
+            } else if p >= 1.0 {
+                1.0
+            } else {
+                -(2f64.powf(10.0 * p - 10.0)) * ((p * 10.0 - 10.75) * 2.0943951).sin()
+            }
+        }
+        Easing::ElasticInOut => {
+            // c5 = 2*PI/4.5
+            const C5: f64 = 1.3962634;
+            if p <= 0.0 {
+                0.0
+            } else if p >= 1.0 {
+                1.0
+            } else if p < 0.5 {
+                -(2f64.powf(20.0 * p - 10.0) * ((20.0 * p - 11.125) * C5).sin()) / 2.0
+            } else {
+                (2f64.powf(-20.0 * p + 10.0) * ((20.0 * p - 11.125) * C5).sin()) / 2.0 + 1.0
+            }
+        }
+        Easing::BounceIn => 1.0 - bounce_out(1.0 - p),
+        Easing::BounceInOut => {
+            if p < 0.5 {
+                (1.0 - bounce_out(1.0 - 2.0 * p)) / 2.0
+            } else {
+                (1.0 + bounce_out(2.0 * p - 1.0)) / 2.0
+            }
+        }
+        Easing::ExpoIn => {
+            if p <= 0.0 {
+                0.0
+            } else {
+                2f64.powf(10.0 * p - 10.0)
+            }
+        }
+        Easing::ExpoOut => {
+            if p >= 1.0 {
+                1.0
+            } else {
+                1.0 - 2f64.powf(-10.0 * p)
+            }
+        }
+        Easing::ExpoInOut => {
+            if p <= 0.0 {
+                0.0
+            } else if p >= 1.0 {
+                1.0
+            } else if p < 0.5 {
+                2f64.powf(20.0 * p - 10.0) / 2.0
+            } else {
+                (2.0 - 2f64.powf(-20.0 * p + 10.0)) / 2.0
+            }
+        }
+        Easing::CircIn => 1.0 - (1.0 - p * p).max(0.0).sqrt(),
+        Easing::CircOut => (1.0 - (p - 1.0).powi(2)).max(0.0).sqrt(),
+        Easing::CircInOut => {
+            if p < 0.5 {
+                (1.0 - (1.0 - (2.0 * p).powi(2)).max(0.0).sqrt()) / 2.0
+            } else {
+                ((1.0 - (-2.0 * p + 2.0).powi(2)).max(0.0).sqrt() + 1.0) / 2.0
+            }
+        }
+        Easing::QuartIn => p.powi(4),
+        Easing::QuartOut => 1.0 - (1.0 - p).powi(4),
+        Easing::QuintOut => 1.0 - (1.0 - p).powi(5),
     }
 }
 
@@ -237,6 +329,18 @@ fn bounce_out(p: f64) -> f64 {
     }
 }
 
+/// The bounce piecewise as an ffmpeg expression over an arbitrary inner
+/// expression, so BounceIn / BounceOut / BounceInOut all share one definition
+/// instead of three hand-copied nests.
+fn bounce_expr(x: &str) -> String {
+    format!(
+        "(if(lt({x},0.36363636),7.5625*({x})*({x}),\
+if(lt({x},0.72727273),7.5625*pow(({x})-0.54545455,2)+0.75,\
+if(lt({x},0.90909091),7.5625*pow(({x})-0.81818182,2)+0.9375,\
+7.5625*pow(({x})-0.95454545,2)+0.984375))))"
+    )
+}
+
 fn ease_expr(p: &str, e: Easing) -> String {
     match e {
         Easing::Linear => p.to_string(),
@@ -257,12 +361,42 @@ fn ease_expr(p: &str, e: Easing) -> String {
         Easing::ElasticOut => format!(
             "(if(lte({p},0),0,if(gte({p},1),1,pow(2,-10*{p})*sin(({p}*10-0.75)*2.0943951023931953)+1)))"
         ),
-        Easing::BounceOut => format!(
-            "(if(lt({p},0.36363636),7.5625*{p}*{p},\
-if(lt({p},0.72727273),7.5625*pow({p}-0.54545455,2)+0.75,\
-if(lt({p},0.90909091),7.5625*pow({p}-0.81818182,2)+0.9375,\
-7.5625*pow({p}-0.95454545,2)+0.984375))))"
+        Easing::BounceOut => bounce_expr(p),
+        Easing::BackIn => format!("(2.70158*{p}*{p}*{p}-1.70158*{p}*{p})"),
+        Easing::BackInOut => format!(
+            "(if(lt({p},0.5),(pow(2*{p},2)*(3.5949095*2*{p}-2.5949095))/2,\
+(pow(2*{p}-2,2)*(3.5949095*(2*{p}-2)+2.5949095)+2)/2))"
         ),
+        Easing::ElasticIn => format!(
+            "(if(lte({p},0),0,if(gte({p},1),1,\
+-pow(2,10*{p}-10)*sin(({p}*10-10.75)*2.0943951023931953))))"
+        ),
+        Easing::ElasticInOut => format!(
+            "(if(lte({p},0),0,if(gte({p},1),1,\
+if(lt({p},0.5),-(pow(2,20*{p}-10)*sin((20*{p}-11.125)*1.3962634015954636))/2,\
+(pow(2,-20*{p}+10)*sin((20*{p}-11.125)*1.3962634015954636))/2+1))))"
+        ),
+        Easing::BounceIn => format!("(1-{})", bounce_expr(&format!("(1-{p})"))),
+        Easing::BounceInOut => format!(
+            "(if(lt({p},0.5),(1-{})/2,(1+{})/2))",
+            bounce_expr(&format!("(1-2*{p})")),
+            bounce_expr(&format!("(2*{p}-1)"))
+        ),
+        Easing::ExpoIn => format!("(if(lte({p},0),0,pow(2,10*{p}-10)))"),
+        Easing::ExpoOut => format!("(if(gte({p},1),1,1-pow(2,-10*{p})))"),
+        Easing::ExpoInOut => format!(
+            "(if(lte({p},0),0,if(gte({p},1),1,\
+if(lt({p},0.5),pow(2,20*{p}-10)/2,(2-pow(2,-20*{p}+10))/2))))"
+        ),
+        Easing::CircIn => format!("(1-sqrt(max(0,1-{p}*{p})))"),
+        Easing::CircOut => format!("(sqrt(max(0,1-pow({p}-1,2))))"),
+        Easing::CircInOut => format!(
+            "(if(lt({p},0.5),(1-sqrt(max(0,1-pow(2*{p},2))))/2,\
+(sqrt(max(0,1-pow(-2*{p}+2,2)))+1)/2))"
+        ),
+        Easing::QuartIn => format!("(pow({p},4))"),
+        Easing::QuartOut => format!("(1-pow(1-{p},4))"),
+        Easing::QuintOut => format!("(1-pow(1-{p},5))"),
     }
 }
 
@@ -507,7 +641,9 @@ pub enum Effect {
         gain_b: Param,
     },
     /// A 3D lookup table, the way a creative LUT is applied.
-    Lut3d { path: String },
+    Lut3d {
+        path: String,
+    },
     /// Stabilisation. `trf` is the motion file produced by the analysis pass;
     /// without one the effect is inert, because vidstabtransform has nothing
     /// to work from.
@@ -871,6 +1007,267 @@ pub enum Effect {
         #[serde(default = "p_hundred")]
         reduction: Param,
     },
+    Gradfun {
+        #[serde(default = "p_one")]
+        strength: Param,
+        #[serde(default = "p_two")]
+        radius: Param,
+    },
+    RemoveGrain {
+        #[serde(default = "p_zero")]
+        mode: Param,
+    },
+    OwDenoise {
+        #[serde(default = "p_two")]
+        depth: Param,
+        #[serde(default = "p_one")]
+        luma: Param,
+    },
+    Sobel {
+        #[serde(default = "p_one")]
+        scale: Param,
+    },
+    Prewitt {
+        #[serde(default = "p_one")]
+        scale: Param,
+    },
+    Roberts {
+        #[serde(default = "p_one")]
+        scale: Param,
+    },
+    Kirsch {
+        #[serde(default = "p_one")]
+        scale: Param,
+    },
+    Scharr {
+        #[serde(default = "p_one")]
+        scale: Param,
+    },
+    ColorLevels {
+        #[serde(default = "p_zero")]
+        black: Param,
+        #[serde(default = "p_one")]
+        white: Param,
+    },
+    ColorHold {
+        #[serde(default = "d_green")]
+        color: String,
+        #[serde(default = "p_point_one")]
+        similarity: Param,
+        #[serde(default = "p_zero")]
+        blend: Param,
+    },
+    ChromaHold {
+        #[serde(default = "d_green")]
+        color: String,
+        #[serde(default = "p_point_one")]
+        similarity: Param,
+        #[serde(default = "p_zero")]
+        blend: Param,
+    },
+    Transpose {
+        #[serde(default = "p_zero")]
+        dir: Param,
+    },
+    FillBorders {
+        #[serde(default = "p_two")]
+        size: Param,
+    },
+    DrawBox {
+        #[serde(default = "p_zero")]
+        x: Param,
+        #[serde(default = "p_zero")]
+        y: Param,
+        #[serde(default = "p_hundred")]
+        w: Param,
+        #[serde(default = "p_hundred")]
+        h: Param,
+        #[serde(default = "d_white")]
+        color: String,
+        #[serde(default = "p_two")]
+        thickness: Param,
+    },
+    DrawGrid {
+        #[serde(default = "p_hundred")]
+        spacing: Param,
+        #[serde(default = "p_one")]
+        thickness: Param,
+        #[serde(default = "d_white")]
+        color: String,
+    },
+    Scroll {
+        #[serde(default = "p_zero")]
+        horizontal: Param,
+        #[serde(default = "p_zero")]
+        vertical: Param,
+    },
+    Photosensitivity {
+        #[serde(default = "p_one")]
+        factor: Param,
+    },
+    VideoLimiter {
+        #[serde(default = "p_zero")]
+        min: Param,
+        #[serde(default = "p_hundred")]
+        max: Param,
+    },
+    Deflate {
+        #[serde(default = "p_hundred")]
+        threshold: Param,
+    },
+    Inflate {
+        #[serde(default = "p_hundred")]
+        threshold: Param,
+    },
+    Median {
+        #[serde(default = "p_one")]
+        radius: Param,
+    },
+    NlMeans {
+        #[serde(default = "p_one")]
+        strength: Param,
+        #[serde(default = "p_three")]
+        patch: Param,
+    },
+    AtaDenoise {
+        #[serde(default = "p_three")]
+        size: Param,
+    },
+    Hqdn3d {
+        #[serde(default = "p_two")]
+        luma: Param,
+        #[serde(default = "p_two")]
+        chroma: Param,
+    },
+    SwapUv,
+    Elbg {
+        #[serde(default = "p_two")]
+        codebook: Param,
+    },
+    ShufflePlanes {
+        #[serde(default = "p_zero")]
+        map0: Param,
+        #[serde(default = "p_one")]
+        map1: Param,
+        #[serde(default = "p_two")]
+        map2: Param,
+    },
+    AllPass {
+        #[serde(default = "p_thousand")]
+        freq: Param,
+        #[serde(default = "p_hundred")]
+        width: Param,
+    },
+    BandPass {
+        #[serde(default = "p_thousand")]
+        freq: Param,
+        #[serde(default = "p_hundred")]
+        width: Param,
+    },
+    BandReject {
+        #[serde(default = "p_thousand")]
+        freq: Param,
+        #[serde(default = "p_hundred")]
+        width: Param,
+    },
+    LowShelf {
+        #[serde(default = "p_zero")]
+        gain: Param,
+        #[serde(default = "p_hundred")]
+        freq: Param,
+    },
+    HighShelf {
+        #[serde(default = "p_zero")]
+        gain: Param,
+        #[serde(default = "p_three_thousand")]
+        freq: Param,
+    },
+    Crystalizer {
+        #[serde(default = "p_two")]
+        intensity: Param,
+    },
+    DeEsser {
+        #[serde(default = "p_half")]
+        intensity: Param,
+    },
+    DialogueEnhance {
+        #[serde(default = "p_one")]
+        original: Param,
+        #[serde(default = "p_one")]
+        enhance: Param,
+    },
+    Earwax,
+    ExtraStereo {
+        #[serde(default = "p_two")]
+        mult: Param,
+    },
+    StereoTools {
+        #[serde(default = "p_zero")]
+        balance: Param,
+        #[serde(default = "p_one")]
+        level: Param,
+    },
+    StereoWiden {
+        #[serde(default = "p_hundred")]
+        delay: Param,
+        #[serde(default = "p_half")]
+        feedback: Param,
+    },
+    SuperEq {
+        #[serde(default = "p_one")]
+        low: Param,
+        #[serde(default = "p_one")]
+        mid: Param,
+        #[serde(default = "p_one")]
+        high: Param,
+    },
+    Compand {
+        #[serde(default = "p_point_one")]
+        attack: Param,
+        #[serde(default = "p_half")]
+        decay: Param,
+    },
+    CompensationDelay {
+        #[serde(default = "p_hundred")]
+        millimetres: Param,
+    },
+    SoftClip {
+        #[serde(default = "p_half")]
+        amount: Param,
+    },
+    Declick {
+        #[serde(default = "p_hundred")]
+        window: Param,
+    },
+    DynamicEq {
+        #[serde(default = "p_point_one")]
+        threshold: Param,
+        #[serde(default = "p_two")]
+        ratio: Param,
+    },
+    Pulsator {
+        #[serde(default = "p_two")]
+        hz: Param,
+    },
+    /// Arbitrary RGB channel matrix (`colorchannelmixer`).
+    ChannelMixer {
+        #[serde(default = "p_one")]
+        rr: Param,
+        #[serde(default = "p_one")]
+        gg: Param,
+        #[serde(default = "p_one")]
+        bb: Param,
+    },
+    /// Displace pixels in blocks (`shufflepixels`).
+    ShufflePixels {
+        #[serde(default = "p_two")]
+        block: Param,
+    },
+    /// Motion-adaptive deinterlacer (`bwdif`), finer than yadif.
+    BwDeinterlace {
+        #[serde(default = "p_zero")]
+        mode: Param,
+    },
     /// Any installed frei0r plugin. This is how the effect count reaches the
     /// hundreds: the same plugin library Kdenlive draws on. Parameters are
     /// frei0r's own normalised 0..1 values, in the plugin's declared order.
@@ -1002,6 +1399,25 @@ impl Effect {
                 | Effect::SubBoost { .. }
                 | Effect::SpeechNorm { .. }
                 | Effect::AudioDenoise { .. }
+                | Effect::AllPass { .. }
+                | Effect::BandPass { .. }
+                | Effect::BandReject { .. }
+                | Effect::LowShelf { .. }
+                | Effect::HighShelf { .. }
+                | Effect::Crystalizer { .. }
+                | Effect::DeEsser { .. }
+                | Effect::DialogueEnhance { .. }
+                | Effect::Earwax
+                | Effect::ExtraStereo { .. }
+                | Effect::StereoTools { .. }
+                | Effect::StereoWiden { .. }
+                | Effect::SuperEq { .. }
+                | Effect::Compand { .. }
+                | Effect::CompensationDelay { .. }
+                | Effect::SoftClip { .. }
+                | Effect::Declick { .. }
+                | Effect::DynamicEq { .. }
+                | Effect::Pulsator { .. }
         )
     }
 
@@ -1096,7 +1512,56 @@ impl Effect {
             | Effect::Exciter { .. }
             | Effect::SubBoost { .. }
             | Effect::SpeechNorm { .. }
-            | Effect::AudioDenoise { .. } => "static",
+            | Effect::AudioDenoise { .. }
+            | Effect::Gradfun { .. }
+            | Effect::RemoveGrain { .. }
+            | Effect::OwDenoise { .. }
+            | Effect::Sobel { .. }
+            | Effect::Prewitt { .. }
+            | Effect::Roberts { .. }
+            | Effect::Kirsch { .. }
+            | Effect::Scharr { .. }
+            | Effect::ColorLevels { .. }
+            | Effect::ColorHold { .. }
+            | Effect::ChromaHold { .. }
+            | Effect::Transpose { .. }
+            | Effect::FillBorders { .. }
+            | Effect::DrawBox { .. }
+            | Effect::DrawGrid { .. }
+            | Effect::Scroll { .. }
+            | Effect::Photosensitivity { .. }
+            | Effect::VideoLimiter { .. }
+            | Effect::Deflate { .. }
+            | Effect::Inflate { .. }
+            | Effect::Median { .. }
+            | Effect::NlMeans { .. }
+            | Effect::AtaDenoise { .. }
+            | Effect::Hqdn3d { .. }
+            | Effect::SwapUv
+            | Effect::Elbg { .. }
+            | Effect::ShufflePlanes { .. }
+            | Effect::AllPass { .. }
+            | Effect::BandPass { .. }
+            | Effect::BandReject { .. }
+            | Effect::LowShelf { .. }
+            | Effect::HighShelf { .. }
+            | Effect::Crystalizer { .. }
+            | Effect::DeEsser { .. }
+            | Effect::DialogueEnhance { .. }
+            | Effect::Earwax
+            | Effect::ExtraStereo { .. }
+            | Effect::StereoTools { .. }
+            | Effect::StereoWiden { .. }
+            | Effect::SuperEq { .. }
+            | Effect::Compand { .. }
+            | Effect::CompensationDelay { .. }
+            | Effect::SoftClip { .. }
+            | Effect::Declick { .. }
+            | Effect::DynamicEq { .. }
+            | Effect::Pulsator { .. }
+            | Effect::ChannelMixer { .. }
+            | Effect::ShufflePixels { .. }
+            | Effect::BwDeinterlace { .. } => "static",
         }
     }
 
@@ -1611,6 +2076,66 @@ cb='p(if(lt(X,W/2),X,W-1-X),Y)':cr='p(if(lt(X,W/2),X,W-1-X),Y)'"
                 reduction.first().clamp(0.01, 97.0)
             )),
 
+            Effect::Gradfun { strength, radius } => Compiled::f(format!("gradfun=strength={:.4}:radius={}", strength.first().clamp(0.51, 64.0), (radius.first().round() as i64).clamp(4, 32))),
+            Effect::RemoveGrain { mode } => Compiled::f(format!("removegrain=m0={}", (mode.first().round() as i64).clamp(0, 24))),
+            Effect::OwDenoise { depth, luma } => Compiled::f(format!("owdenoise=depth={}:luma_strength={:.4}", (depth.first().round() as i64).clamp(8, 16), luma.first().clamp(0.0, 1000.0))),
+            Effect::Sobel { scale } => Compiled::f(format!("sobel=scale={:.4}", scale.first().clamp(0.0, 65535.0))),
+            Effect::Prewitt { scale } => Compiled::f(format!("prewitt=scale={:.4}", scale.first().clamp(0.0, 65535.0))),
+            Effect::Roberts { scale } => Compiled::f(format!("roberts=scale={:.4}", scale.first().clamp(0.0, 65535.0))),
+            Effect::Kirsch { scale } => Compiled::f(format!("kirsch=scale={:.4}", scale.first().clamp(0.0, 65535.0))),
+            Effect::Scharr { scale } => Compiled::f(format!("scharr=scale={:.4}", scale.first().clamp(0.0, 65535.0))),
+            Effect::ColorLevels { black, white } => Compiled::f(format!("colorlevels=rimin={:.4}:gimin={:.4}:bimin={:.4}:rimax={:.4}:gimax={:.4}:bimax={:.4}", black.first().clamp(-1.0,1.0), black.first().clamp(-1.0,1.0), black.first().clamp(-1.0,1.0), white.first().clamp(-1.0,1.0), white.first().clamp(-1.0,1.0), white.first().clamp(-1.0,1.0))),
+            Effect::ColorHold { color, similarity, blend } => Compiled::f(format!("colorhold={}:{:.4}:{:.4}", sanitise_color(color), similarity.first().clamp(0.01,1.0), blend.first().clamp(0.0,1.0))),
+            Effect::ChromaHold { color, similarity, blend } => Compiled::f(format!("chromahold={}:{:.4}:{:.4}", sanitise_color(color), similarity.first().clamp(0.01,1.0), blend.first().clamp(0.0,1.0))),
+            Effect::Transpose { dir } => Compiled::f(format!("transpose=dir={}", (dir.first().round() as i64).clamp(0, 3))),
+            Effect::FillBorders { size } => Compiled::f(format!("fillborders=left={s}:right={s}:top={s}:bottom={s}:mode=smear", s = (size.first().round() as i64).clamp(0, 64))),
+            Effect::DrawBox { x, y, w, h, color, thickness } => Compiled::f(format!("drawbox=x={}:y={}:w={}:h={}:color={}:t={}", x.first().round() as i64, y.first().round() as i64, w.first().round().max(1.0) as i64, h.first().round().max(1.0) as i64, sanitise_color(color), (thickness.first().round() as i64).clamp(1, 64))),
+            Effect::DrawGrid { spacing, thickness, color } => Compiled::f(format!("drawgrid=w={s}:h={s}:t={}:c={}", (thickness.first().round() as i64).clamp(1, 32), sanitise_color(color), s = (spacing.first().round() as i64).clamp(2, 4096))),
+            Effect::Scroll { horizontal, vertical } => Compiled::f(format!("scroll=horizontal={:.5}:vertical={:.5}", horizontal.first().clamp(-1.0,1.0), vertical.first().clamp(-1.0,1.0))),
+            Effect::Photosensitivity { factor } => Compiled::f(format!("photosensitivity=f={}", (factor.first().round() as i64).clamp(2, 240))),
+            Effect::VideoLimiter { min, max } => Compiled::f(format!("limiter=min={}:max={}", (min.first().round() as i64).clamp(0, 65535), (max.first().round() as i64).clamp(0, 65535))),
+            Effect::Deflate { threshold } => Compiled::f(format!("deflate=threshold0={}", (threshold.first().round() as i64).clamp(0, 65535))),
+            Effect::Inflate { threshold } => Compiled::f(format!("inflate=threshold0={}", (threshold.first().round() as i64).clamp(0, 65535))),
+            Effect::Median { radius } => Compiled::f(format!("median=radius={}", (radius.first().round() as i64).clamp(1, 63))),
+            Effect::NlMeans { strength, patch } => Compiled::f(format!("nlmeans=s={:.4}:p={}", strength.first().clamp(1.0, 30.0), (patch.first().round() as i64).clamp(0, 49) | 1)),
+            Effect::AtaDenoise { size } => Compiled::f(format!("atadenoise=s={}", (size.first().round() as i64).clamp(5, 129) | 1)),
+            Effect::Hqdn3d { luma, chroma } => Compiled::f(format!("hqdn3d=luma_spatial={:.4}:chroma_spatial={:.4}", luma.first().clamp(0.0, 100.0), chroma.first().clamp(0.0, 100.0))),
+            Effect::SwapUv => Compiled::f("swapuv".to_string()),
+            Effect::Elbg { codebook } => Compiled::f(format!("elbg=codebook_length={}", (codebook.first().round() as i64).clamp(1, 256))),
+            Effect::ShufflePlanes { map0, map1, map2 } => Compiled::f(format!("shuffleplanes=map0={}:map1={}:map2={}", (map0.first().round() as i64).clamp(0,3), (map1.first().round() as i64).clamp(0,3), (map2.first().round() as i64).clamp(0,3))),
+            Effect::AllPass { freq, width } => Compiled::f(format!("allpass=f={:.4}:w={:.4}", freq.first().clamp(20.0, 20000.0), width.first().clamp(0.01, 2000.0))),
+            Effect::BandPass { freq, width } => Compiled::f(format!("bandpass=f={:.4}:w={:.4}", freq.first().clamp(20.0, 20000.0), width.first().clamp(0.01, 2000.0))),
+            Effect::BandReject { freq, width } => Compiled::f(format!("bandreject=f={:.4}:w={:.4}", freq.first().clamp(20.0, 20000.0), width.first().clamp(0.01, 2000.0))),
+            Effect::LowShelf { gain, freq } => Compiled::f(format!("lowshelf=g={:.4}:f={:.4}", gain.first().clamp(-30.0, 30.0), freq.first().clamp(20.0, 2000.0))),
+            Effect::HighShelf { gain, freq } => Compiled::f(format!("highshelf=g={:.4}:f={:.4}", gain.first().clamp(-30.0, 30.0), freq.first().clamp(1000.0, 20000.0))),
+            Effect::Crystalizer { intensity } => Compiled::f(format!("crystalizer=i={:.4}", intensity.first().clamp(-10.0, 10.0))),
+            Effect::DeEsser { intensity } => Compiled::f(format!("deesser=i={:.4}", intensity.first().clamp(0.0, 1.0))),
+            Effect::DialogueEnhance { original, enhance } => Compiled::f(format!("dialoguenhance=original={:.4}:enhance={:.4}", original.first().clamp(0.0,1.0), enhance.first().clamp(0.0,3.0))),
+            Effect::Earwax => Compiled::f("earwax".to_string()),
+            Effect::ExtraStereo { mult } => Compiled::f(format!("extrastereo=m={:.4}", mult.first().clamp(-10.0, 10.0))),
+            Effect::StereoTools { balance, level } => Compiled::f(format!("stereotools=balance_in={:.4}:level_in={:.4}", balance.first().clamp(-1.0,1.0), level.first().clamp(0.015625, 64.0))),
+            Effect::StereoWiden { delay, feedback } => Compiled::f(format!("stereowiden=delay={:.4}:feedback={:.4}", delay.first().clamp(1.0, 100.0), feedback.first().clamp(0.0, 0.9))),
+            Effect::SuperEq { low, mid, high } => Compiled::f(format!("superequalizer=1b={:.4}:10b={:.4}:18b={:.4}", low.first().clamp(0.0, 20.0), mid.first().clamp(0.0, 20.0), high.first().clamp(0.0, 20.0))),
+            Effect::Compand { attack, decay } => Compiled::f(format!("compand=attacks={:.4}:decays={:.4}:points=-80/-80|-30/-15|0/-5", attack.first().clamp(0.0, 10.0), decay.first().clamp(0.0, 10.0))),
+            Effect::CompensationDelay { millimetres } => Compiled::f(format!("compensationdelay=cm={}", (millimetres.first().round() as i64).clamp(0, 100))),
+            Effect::SoftClip { amount } => Compiled::f(format!("asoftclip=type=tanh:param={:.4}", amount.first().clamp(0.01, 3.0))),
+            Effect::Declick { window } => Compiled::f(format!("adeclick=window={:.4}", window.first().clamp(10.0, 100.0))),
+            Effect::DynamicEq { threshold, ratio } => Compiled::f(format!("adynamicequalizer=threshold={:.4}:ratio={:.4}", threshold.first().clamp(0.0, 100.0), ratio.first().clamp(1.0, 30.0))),
+            Effect::Pulsator { hz } => Compiled::f(format!("apulsator=hz={:.4}", hz.first().clamp(0.01, 100.0))),
+            Effect::ChannelMixer { rr, gg, bb } => Compiled::f(format!(
+                "colorchannelmixer=rr={:.4}:gg={:.4}:bb={:.4}",
+                rr.first().clamp(-2.0, 2.0),
+                gg.first().clamp(-2.0, 2.0),
+                bb.first().clamp(-2.0, 2.0)
+            )),
+            Effect::ShufflePixels { block } => Compiled::f(format!(
+                "shufflepixels=direction=forward:mode=horizontal:width={b}:height={b}",
+                b = (block.first().round() as i64).clamp(1, 512)
+            )),
+            Effect::BwDeinterlace { mode } => Compiled::f(format!(
+                "bwdif=mode={}",
+                (mode.first().round() as i64).clamp(0, 1)
+            )),
             Effect::Frei0r { name, params } => {
                 let plugin = sanitise_plugin(name);
                 if plugin.is_empty() {
@@ -1859,6 +2384,22 @@ pub enum BlendMode {
     Negation,
     Phoenix,
     GrainMerge,
+    And,
+    Or,
+    Xor,
+    Average,
+    Extremity,
+    GrainExtract,
+    Addition128,
+    Difference128,
+    Multiply128,
+    SoftDifference,
+    Geometric,
+    Harmonic,
+    Bleach,
+    Stain,
+    Interpolate,
+    HardOverlay,
 }
 
 impl BlendMode {
@@ -1891,6 +2432,22 @@ impl BlendMode {
             BlendMode::Negation => "negation",
             BlendMode::Phoenix => "phoenix",
             BlendMode::GrainMerge => "grainmerge",
+            BlendMode::And => "and",
+            BlendMode::Or => "or",
+            BlendMode::Xor => "xor",
+            BlendMode::Average => "average",
+            BlendMode::Extremity => "extremity",
+            BlendMode::GrainExtract => "grainextract",
+            BlendMode::Addition128 => "addition128",
+            BlendMode::Difference128 => "difference128",
+            BlendMode::Multiply128 => "multiply128",
+            BlendMode::SoftDifference => "softdifference",
+            BlendMode::Geometric => "geometric",
+            BlendMode::Harmonic => "harmonic",
+            BlendMode::Bleach => "bleach",
+            BlendMode::Stain => "stain",
+            BlendMode::Interpolate => "interpolate",
+            BlendMode::HardOverlay => "hardoverlay",
         }
     }
 }
@@ -2000,6 +2557,18 @@ pub enum TransitionKind {
     SlideDown,
     PixelDissolve,
     DiagonalWipe,
+    Checkerboard,
+    VenetianBlinds,
+    SplitVertical,
+    SplitHorizontal,
+    RadialWipe,
+    CornerWipeTopLeft,
+    CornerWipeTopRight,
+    RippleDissolve,
+    LumaWipe,
+    BandWipe,
+    Spiral,
+    CrossZoom,
 }
 
 /// A transition at the head of a clip. Because clips composite by overlay, a
@@ -3229,6 +3798,88 @@ a='if(lt(Y,H*min(1,T/{d:.4})),alpha(X,Y+H*(1-min(1,T/{d:.4}))),0)'"
                             "geq=lum='p(X,Y-H*(1-min(1,T/{d:.4})))':\
 cb='p(X,Y-H*(1-min(1,T/{d:.4})))':cr='p(X,Y-H*(1-min(1,T/{d:.4})))':\
 a='if(gt(Y,H*(1-min(1,T/{d:.4}))),alpha(X,Y-H*(1-min(1,T/{d:.4}))),0)'"
+                        ));
+                    }
+                    TransitionKind::Checkerboard => {
+                        // Even cells reveal over the first half, odd over the
+                        // second, so the board fills in two passes.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(mod(floor(X/40)+floor(Y/40),2)*0.5,min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::VenetianBlinds => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(mod(Y,40)/40,min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::SplitVertical => {
+                        // Barn doors on the other axis: opens from the middle
+                        // row outward.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(abs(Y-H/2),min(1,T/{d:.4})*H/2),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::SplitHorizontal => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(gt(abs(Y-H/2),(1-min(1,T/{d:.4}))*H/2),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::RadialWipe => {
+                        // Sweep anchored at the top-left corner, 0..PI/2.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(atan2(Y,X),min(1,T/{d:.4})*PI/2),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::CornerWipeTopLeft => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(max(X/W,Y/H),min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::CornerWipeTopRight => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(max((W-X)/W,Y/H),min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::RippleDissolve => {
+                        // Concentric rings filling outward from the centre.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(mod(hypot(X-W/2,Y-H/2),60)/60,min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::LumaWipe => {
+                        // The incoming image's own brightness is the wipe map,
+                        // so highlights arrive before shadows.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(lum(X,Y)/255,min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::BandWipe => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(mod(X,80)/80,min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::Spiral => {
+                        // Angle plus radius, so the reveal winds outward.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(mod((atan2(Y-H/2,X-W/2)+PI)/(2*PI)+hypot(X-W/2,Y-H/2)/hypot(W/2,H/2),1),min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::CrossZoom => {
+                        // The incoming clip scales up into place from 40%.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(W/2+(X-W/2)/max(0.4,min(1,T/{d:.4})),H/2+(Y-H/2)/max(0.4,min(1,T/{d:.4})))':a='alpha(X,Y)*min(1,T/{d:.4})'"
                         ));
                     }
                 }
@@ -5342,6 +5993,183 @@ mod tests {
             Effect::AudioDenoise {
                 reduction: Param::Static(12.0),
             },
+            Effect::Gradfun {
+                strength: Param::Static(1.2),
+                radius: Param::Static(16.0),
+            },
+            Effect::RemoveGrain {
+                mode: Param::Static(1.0),
+            },
+            Effect::OwDenoise {
+                depth: Param::Static(8.0),
+                luma: Param::Static(1.0),
+            },
+            Effect::Sobel {
+                scale: Param::Static(1.0),
+            },
+            Effect::Prewitt {
+                scale: Param::Static(1.0),
+            },
+            Effect::Roberts {
+                scale: Param::Static(1.0),
+            },
+            Effect::Kirsch {
+                scale: Param::Static(1.0),
+            },
+            Effect::Scharr {
+                scale: Param::Static(1.0),
+            },
+            Effect::ColorLevels {
+                black: Param::Static(0.05),
+                white: Param::Static(0.95),
+            },
+            Effect::ColorHold {
+                color: "green".into(),
+                similarity: Param::Static(0.3),
+                blend: Param::Static(0.1),
+            },
+            Effect::ChromaHold {
+                color: "green".into(),
+                similarity: Param::Static(0.3),
+                blend: Param::Static(0.1),
+            },
+            Effect::Transpose {
+                dir: Param::Static(1.0),
+            },
+            Effect::FillBorders {
+                size: Param::Static(4.0),
+            },
+            Effect::DrawBox {
+                x: Param::Static(10.0),
+                y: Param::Static(10.0),
+                w: Param::Static(60.0),
+                h: Param::Static(40.0),
+                color: "white".into(),
+                thickness: Param::Static(2.0),
+            },
+            Effect::DrawGrid {
+                spacing: Param::Static(32.0),
+                thickness: Param::Static(1.0),
+                color: "white".into(),
+            },
+            Effect::Scroll {
+                horizontal: Param::Static(0.01),
+                vertical: Param::Static(0.0),
+            },
+            Effect::Photosensitivity {
+                factor: Param::Static(30.0),
+            },
+            Effect::VideoLimiter {
+                min: Param::Static(16.0),
+                max: Param::Static(235.0),
+            },
+            Effect::Deflate {
+                threshold: Param::Static(50.0),
+            },
+            Effect::Inflate {
+                threshold: Param::Static(50.0),
+            },
+            Effect::Median {
+                radius: Param::Static(3.0),
+            },
+            Effect::NlMeans {
+                strength: Param::Static(1.0),
+                patch: Param::Static(3.0),
+            },
+            Effect::AtaDenoise {
+                size: Param::Static(9.0),
+            },
+            Effect::Hqdn3d {
+                luma: Param::Static(4.0),
+                chroma: Param::Static(3.0),
+            },
+            Effect::SwapUv,
+            Effect::Elbg {
+                codebook: Param::Static(8.0),
+            },
+            Effect::ShufflePlanes {
+                map0: Param::Static(0.0),
+                map1: Param::Static(2.0),
+                map2: Param::Static(1.0),
+            },
+            Effect::AllPass {
+                freq: Param::Static(1000.0),
+                width: Param::Static(100.0),
+            },
+            Effect::BandPass {
+                freq: Param::Static(1000.0),
+                width: Param::Static(200.0),
+            },
+            Effect::BandReject {
+                freq: Param::Static(1000.0),
+                width: Param::Static(200.0),
+            },
+            Effect::LowShelf {
+                gain: Param::Static(3.0),
+                freq: Param::Static(120.0),
+            },
+            Effect::HighShelf {
+                gain: Param::Static(3.0),
+                freq: Param::Static(6000.0),
+            },
+            Effect::Crystalizer {
+                intensity: Param::Static(2.0),
+            },
+            Effect::DeEsser {
+                intensity: Param::Static(0.5),
+            },
+            Effect::DialogueEnhance {
+                original: Param::Static(1.0),
+                enhance: Param::Static(1.0),
+            },
+            Effect::Earwax,
+            Effect::ExtraStereo {
+                mult: Param::Static(2.5),
+            },
+            Effect::StereoTools {
+                balance: Param::Static(0.0),
+                level: Param::Static(1.0),
+            },
+            Effect::StereoWiden {
+                delay: Param::Static(20.0),
+                feedback: Param::Static(0.3),
+            },
+            Effect::SuperEq {
+                low: Param::Static(2.0),
+                mid: Param::Static(1.0),
+                high: Param::Static(2.0),
+            },
+            Effect::Compand {
+                attack: Param::Static(0.1),
+                decay: Param::Static(0.4),
+            },
+            Effect::CompensationDelay {
+                millimetres: Param::Static(20.0),
+            },
+            Effect::SoftClip {
+                amount: Param::Static(0.8),
+            },
+            Effect::Declick {
+                window: Param::Static(55.0),
+            },
+            Effect::DynamicEq {
+                threshold: Param::Static(0.1),
+                ratio: Param::Static(2.0),
+            },
+            Effect::Pulsator {
+                hz: Param::Static(1.0),
+            },
+            Effect::ChannelMixer {
+                rr: Param::Static(0.9),
+                gg: Param::Static(1.0),
+                bb: Param::Static(1.1),
+            },
+            Effect::ShufflePixels {
+                block: Param::Static(16.0),
+            },
+            Effect::BwDeinterlace {
+                mode: Param::Static(0.0),
+            },
         ];
         for e in &all {
             let route = e.animation_route();
@@ -5354,7 +6182,7 @@ mod tests {
         }
         assert_eq!(
             all.len(),
-            47,
+            96,
             "catalogue size changed — update the UI list too"
         );
     }
@@ -8282,6 +9110,203 @@ mod e2e {
                 },
             ),
             ("mirror", Effect::Mirror),
+            (
+                "gradfun",
+                Effect::Gradfun {
+                    strength: Param::Static(1.2),
+                    radius: Param::Static(16.0),
+                },
+            ),
+            (
+                "removegrain",
+                Effect::RemoveGrain {
+                    mode: Param::Static(1.0),
+                },
+            ),
+            (
+                "owdenoise",
+                Effect::OwDenoise {
+                    depth: Param::Static(8.0),
+                    luma: Param::Static(1.0),
+                },
+            ),
+            (
+                "sobel",
+                Effect::Sobel {
+                    scale: Param::Static(1.0),
+                },
+            ),
+            (
+                "prewitt",
+                Effect::Prewitt {
+                    scale: Param::Static(1.0),
+                },
+            ),
+            (
+                "roberts",
+                Effect::Roberts {
+                    scale: Param::Static(1.0),
+                },
+            ),
+            (
+                "kirsch",
+                Effect::Kirsch {
+                    scale: Param::Static(1.0),
+                },
+            ),
+            (
+                "scharr",
+                Effect::Scharr {
+                    scale: Param::Static(1.0),
+                },
+            ),
+            (
+                "colorlevels",
+                Effect::ColorLevels {
+                    black: Param::Static(0.05),
+                    white: Param::Static(0.95),
+                },
+            ),
+            (
+                "colorhold",
+                Effect::ColorHold {
+                    color: "green".into(),
+                    similarity: Param::Static(0.3),
+                    blend: Param::Static(0.1),
+                },
+            ),
+            (
+                "chromahold",
+                Effect::ChromaHold {
+                    color: "green".into(),
+                    similarity: Param::Static(0.3),
+                    blend: Param::Static(0.1),
+                },
+            ),
+            (
+                "transpose",
+                Effect::Transpose {
+                    dir: Param::Static(1.0),
+                },
+            ),
+            (
+                "fillborders",
+                Effect::FillBorders {
+                    size: Param::Static(4.0),
+                },
+            ),
+            (
+                "drawbox",
+                Effect::DrawBox {
+                    x: Param::Static(10.0),
+                    y: Param::Static(10.0),
+                    w: Param::Static(60.0),
+                    h: Param::Static(40.0),
+                    color: "white".into(),
+                    thickness: Param::Static(2.0),
+                },
+            ),
+            (
+                "drawgrid",
+                Effect::DrawGrid {
+                    spacing: Param::Static(32.0),
+                    thickness: Param::Static(1.0),
+                    color: "white".into(),
+                },
+            ),
+            (
+                "scroll",
+                Effect::Scroll {
+                    horizontal: Param::Static(0.01),
+                    vertical: Param::Static(0.0),
+                },
+            ),
+            (
+                "photosensitivity",
+                Effect::Photosensitivity {
+                    factor: Param::Static(30.0),
+                },
+            ),
+            (
+                "videolimiter",
+                Effect::VideoLimiter {
+                    min: Param::Static(16.0),
+                    max: Param::Static(235.0),
+                },
+            ),
+            (
+                "deflate",
+                Effect::Deflate {
+                    threshold: Param::Static(50.0),
+                },
+            ),
+            (
+                "inflate",
+                Effect::Inflate {
+                    threshold: Param::Static(50.0),
+                },
+            ),
+            (
+                "median",
+                Effect::Median {
+                    radius: Param::Static(3.0),
+                },
+            ),
+            (
+                "nlmeans",
+                Effect::NlMeans {
+                    strength: Param::Static(1.0),
+                    patch: Param::Static(3.0),
+                },
+            ),
+            (
+                "atadenoise",
+                Effect::AtaDenoise {
+                    size: Param::Static(9.0),
+                },
+            ),
+            (
+                "hqdn3d",
+                Effect::Hqdn3d {
+                    luma: Param::Static(4.0),
+                    chroma: Param::Static(3.0),
+                },
+            ),
+            ("swapuv", Effect::SwapUv),
+            (
+                "channelmixer",
+                Effect::ChannelMixer {
+                    rr: Param::Static(0.9),
+                    gg: Param::Static(1.0),
+                    bb: Param::Static(1.1),
+                },
+            ),
+            (
+                "shufflepixels",
+                Effect::ShufflePixels {
+                    block: Param::Static(16.0),
+                },
+            ),
+            (
+                "bwdeinterlace",
+                Effect::BwDeinterlace {
+                    mode: Param::Static(0.0),
+                },
+            ),
+            (
+                "elbg",
+                Effect::Elbg {
+                    codebook: Param::Static(8.0),
+                },
+            ),
+            (
+                "shuffleplanes",
+                Effect::ShufflePlanes {
+                    map0: Param::Static(0.0),
+                    map1: Param::Static(2.0),
+                    map2: Param::Static(1.0),
+                },
+            ),
         ];
 
         let audio_cases: Vec<(&str, Effect)> = vec![
@@ -8411,6 +9436,127 @@ mod e2e {
                     reduction: Param::Static(12.0),
                 },
             ),
+            (
+                "allpass",
+                Effect::AllPass {
+                    freq: Param::Static(1000.0),
+                    width: Param::Static(100.0),
+                },
+            ),
+            (
+                "bandpass",
+                Effect::BandPass {
+                    freq: Param::Static(1000.0),
+                    width: Param::Static(200.0),
+                },
+            ),
+            (
+                "bandreject",
+                Effect::BandReject {
+                    freq: Param::Static(1000.0),
+                    width: Param::Static(200.0),
+                },
+            ),
+            (
+                "lowshelf",
+                Effect::LowShelf {
+                    gain: Param::Static(3.0),
+                    freq: Param::Static(120.0),
+                },
+            ),
+            (
+                "highshelf",
+                Effect::HighShelf {
+                    gain: Param::Static(3.0),
+                    freq: Param::Static(6000.0),
+                },
+            ),
+            (
+                "crystalizer",
+                Effect::Crystalizer {
+                    intensity: Param::Static(2.0),
+                },
+            ),
+            (
+                "deesser",
+                Effect::DeEsser {
+                    intensity: Param::Static(0.5),
+                },
+            ),
+            (
+                "dialogueenhance",
+                Effect::DialogueEnhance {
+                    original: Param::Static(1.0),
+                    enhance: Param::Static(1.0),
+                },
+            ),
+            ("earwax", Effect::Earwax),
+            (
+                "extrastereo",
+                Effect::ExtraStereo {
+                    mult: Param::Static(2.5),
+                },
+            ),
+            (
+                "stereotools",
+                Effect::StereoTools {
+                    balance: Param::Static(0.0),
+                    level: Param::Static(1.0),
+                },
+            ),
+            (
+                "stereowiden",
+                Effect::StereoWiden {
+                    delay: Param::Static(20.0),
+                    feedback: Param::Static(0.3),
+                },
+            ),
+            (
+                "supereq",
+                Effect::SuperEq {
+                    low: Param::Static(2.0),
+                    mid: Param::Static(1.0),
+                    high: Param::Static(2.0),
+                },
+            ),
+            (
+                "compand",
+                Effect::Compand {
+                    attack: Param::Static(0.1),
+                    decay: Param::Static(0.4),
+                },
+            ),
+            (
+                "compensationdelay",
+                Effect::CompensationDelay {
+                    millimetres: Param::Static(20.0),
+                },
+            ),
+            (
+                "softclip",
+                Effect::SoftClip {
+                    amount: Param::Static(0.8),
+                },
+            ),
+            (
+                "declick",
+                Effect::Declick {
+                    window: Param::Static(55.0),
+                },
+            ),
+            (
+                "dynamiceq",
+                Effect::DynamicEq {
+                    threshold: Param::Static(0.1),
+                    ratio: Param::Static(2.0),
+                },
+            ),
+            (
+                "pulsator",
+                Effect::Pulsator {
+                    hz: Param::Static(1.0),
+                },
+            ),
         ];
 
         let mut failures: Vec<String> = Vec::new();
@@ -8469,6 +9615,21 @@ mod e2e {
             Easing::BackOut,
             Easing::ElasticOut,
             Easing::BounceOut,
+            Easing::BackIn,
+            Easing::BackInOut,
+            Easing::ElasticIn,
+            Easing::ElasticInOut,
+            Easing::BounceIn,
+            Easing::BounceInOut,
+            Easing::ExpoIn,
+            Easing::ExpoOut,
+            Easing::ExpoInOut,
+            Easing::CircIn,
+            Easing::CircOut,
+            Easing::CircInOut,
+            Easing::QuartIn,
+            Easing::QuartOut,
+            Easing::QuintOut,
         ];
 
         let mut failures: Vec<String> = Vec::new();
@@ -8545,6 +9706,18 @@ mod e2e {
             ("slideright", TransitionKind::SlideRight),
             ("slideup", TransitionKind::SlideUp),
             ("slidedown", TransitionKind::SlideDown),
+            ("checkerboard", TransitionKind::Checkerboard),
+            ("venetianblinds", TransitionKind::VenetianBlinds),
+            ("splitvertical", TransitionKind::SplitVertical),
+            ("splithorizontal", TransitionKind::SplitHorizontal),
+            ("radialwipe", TransitionKind::RadialWipe),
+            ("cornerwipetl", TransitionKind::CornerWipeTopLeft),
+            ("cornerwipetr", TransitionKind::CornerWipeTopRight),
+            ("rippledissolve", TransitionKind::RippleDissolve),
+            ("lumawipe", TransitionKind::LumaWipe),
+            ("bandwipe", TransitionKind::BandWipe),
+            ("spiral", TransitionKind::Spiral),
+            ("crosszoom", TransitionKind::CrossZoom),
         ];
 
         let mut failures: Vec<String> = Vec::new();
@@ -8565,9 +9738,25 @@ mod e2e {
             let resolved = apply_transitions(&project);
             let out = scratch(&format!("odyssey-trans-{name}.webm"));
             if let Err(e) = render(&resolved, &preview_profile(), &out) {
+                // ffmpeg's last line is usually the generic "Conversion failed!";
+                // the diagnostic line is further up, so prefer it.
                 let detail = format!("{e}");
-                let last = detail.lines().last().unwrap_or("").trim().to_string();
-                failures.push(format!("{name}: {last}"));
+                let pick = detail
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .find(|l| {
+                        let low = l.to_lowercase();
+                        (low.contains("error")
+                            || low.contains("invalid")
+                            || low.contains("unable")
+                            || low.contains("no such")
+                            || low.contains("not supported"))
+                            && !low.contains("conversion failed")
+                    })
+                    .unwrap_or_else(|| detail.lines().last().unwrap_or("").trim())
+                    .to_string();
+                failures.push(format!("{name}: {pick}"));
             }
             let _ = std::fs::remove_file(&out);
         }
