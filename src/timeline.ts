@@ -1,7 +1,10 @@
 /** Odyssey Video — the timeline model, mirroring src-tauri/src/timeline.rs.
  *  Rust owns rendering; this owns editing. The shapes must stay in step. */
 
-export type Easing = "linear" | "hold" | "easein" | "easeout" | "easeinout";
+export type Easing =
+  | "linear" | "hold" | "easein" | "easeout" | "easeinout"
+  | "cubicin" | "cubicout" | "cubicinout" | "sinein" | "sineout"
+  | "backout" | "elasticout" | "bounceout";
 
 export interface Keyframe {
   time: number;
@@ -84,7 +87,37 @@ export type Effect =
   | { kind: "stereowidth"; amount: Param }
   | { kind: "mono" }
   | { kind: "swapchannels" }
-  | { kind: "trimsilence"; threshold: number };
+  | { kind: "trimsilence"; threshold: number }
+  | { kind: "vibrance"; intensity: Param }
+  | { kind: "colorbalance"; r: Param; g: Param; b: Param }
+  | { kind: "chromaticaberration"; amount: Param }
+  | { kind: "shear"; x: Param; y: Param }
+  | { kind: "colorkey"; color: string; similarity: Param; blend: Param }
+  | { kind: "hsvkey"; hue: Param; sat: Param; val: Param; similarity: Param; blend: Param }
+  | { kind: "frameblend"; frames: Param }
+  | { kind: "falsecolor"; preset: string }
+  | { kind: "histeq"; strength: Param }
+  | { kind: "autolevels"; strength: Param }
+  | { kind: "deinterlace"; mode: number }
+  | { kind: "adaptivesharpen"; strength: Param }
+  | { kind: "chromadenoise"; threshold: Param }
+  | { kind: "huesaturation"; hue: Param; saturation: Param; intensity: Param }
+  | { kind: "bilateral"; sigma_s: Param; sigma_r: Param }
+  | { kind: "smartblur"; radius: Param; strength: Param }
+  | { kind: "vaguedenoise"; threshold: Param }
+  | { kind: "sepia" }
+  | { kind: "scanlines"; amount: Param }
+  | { kind: "mirror" }
+  | { kind: "bass"; gain: Param; freq: Param }
+  | { kind: "treble"; gain: Param; freq: Param }
+  | { kind: "parametriceq"; freq: Param; width: Param; gain: Param }
+  | { kind: "tremolo"; freq: Param; depth: Param }
+  | { kind: "vibrato"; freq: Param; depth: Param }
+  | { kind: "bitcrush"; bits: Param; mix: Param }
+  | { kind: "exciter"; amount: Param }
+  | { kind: "subboost"; amount: Param }
+  | { kind: "speechnorm"; expansion: Param }
+  | { kind: "audiodenoise"; reduction: Param };
 
 /** Intrinsic clip motion. Every clip has it, the way Premiere does. */
 export interface Motion {
@@ -100,7 +133,9 @@ export interface Motion {
 export type BlendMode =
   | "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten"
   | "colordodge" | "colorburn" | "hardlight" | "softlight"
-  | "difference" | "exclusion" | "addition" | "subtract";
+  | "difference" | "exclusion" | "addition" | "subtract"
+  | "linearlight" | "pinlight" | "vividlight" | "hardmix" | "divide"
+  | "glow" | "reflect" | "freeze" | "heat" | "negation" | "phoenix" | "grainmerge";
 
 export function defaultMotion(): Motion {
   return { x: 0, y: 0, scale: 100, rotation: 0, anchor_x: 0, anchor_y: 0, opacity: 1 };
@@ -129,6 +164,20 @@ export const BLEND_CANVAS: Record<BlendMode, GlobalCompositeOperation> = {
   exclusion: "exclusion",
   addition: "lighter",
   subtract: "source-over",
+  // Canvas has no equivalent for these, so they preview as normal and only
+  // differ in the export. Same caveat as `subtract` above.
+  linearlight: "source-over",
+  pinlight: "source-over",
+  vividlight: "source-over",
+  hardmix: "source-over",
+  divide: "source-over",
+  glow: "source-over",
+  reflect: "source-over",
+  freeze: "source-over",
+  heat: "source-over",
+  negation: "source-over",
+  phoenix: "source-over",
+  grainmerge: "source-over",
 };
 
 export const BLEND_LABELS: Array<[BlendMode, string]> = [
@@ -138,6 +187,11 @@ export const BLEND_LABELS: Array<[BlendMode, string]> = [
   ["hardlight", "Hard light"], ["softlight", "Soft light"],
   ["difference", "Difference"], ["exclusion", "Exclusion"],
   ["addition", "Add"], ["subtract", "Subtract"],
+  ["linearlight", "Linear light"], ["pinlight", "Pin light"],
+  ["vividlight", "Vivid light"], ["hardmix", "Hard mix"], ["divide", "Divide"],
+  ["glow", "Glow"], ["reflect", "Reflect"], ["freeze", "Freeze"],
+  ["heat", "Heat"], ["negation", "Negation"], ["phoenix", "Phoenix"],
+  ["grainmerge", "Grain merge"],
 ];
 
 /** Motion parameters the inspector shows, in Premiere's order. */
@@ -169,7 +223,12 @@ export interface Clip {
   transition_in: Transition | null;
 }
 
-export type TransitionKind = "dissolve" | "diptoblack" | "wipeleft";
+export type TransitionKind =
+  | "dissolve" | "diptoblack" | "diptowhite"
+  | "wipeleft" | "wiperight" | "wipeup" | "wipedown" | "diagonalwipe"
+  | "irisopen" | "irisclose" | "barndooropen" | "barndoorclose"
+  | "clockwipe" | "pixeldissolve"
+  | "slideleft" | "slideright" | "slideup" | "slidedown";
 
 export interface Transition {
   kind: TransitionKind;
@@ -179,7 +238,22 @@ export interface Transition {
 export const TRANSITION_LABELS: Array<[TransitionKind, string]> = [
   ["dissolve", "Cross dissolve"],
   ["diptoblack", "Dip to black"],
+  ["diptowhite", "Dip to white"],
   ["wipeleft", "Wipe left"],
+  ["wiperight", "Wipe right"],
+  ["wipeup", "Wipe up"],
+  ["wipedown", "Wipe down"],
+  ["diagonalwipe", "Diagonal wipe"],
+  ["irisopen", "Iris open"],
+  ["irisclose", "Iris close"],
+  ["barndooropen", "Barn door open"],
+  ["barndoorclose", "Barn door close"],
+  ["clockwipe", "Clock wipe"],
+  ["pixeldissolve", "Pixel dissolve"],
+  ["slideleft", "Slide left"],
+  ["slideright", "Slide right"],
+  ["slideup", "Slide up"],
+  ["slidedown", "Slide down"],
 ];
 
 export interface Track {
@@ -336,6 +410,25 @@ function ease(p: number, e: Easing): number {
     case "easein": return t * t;
     case "easeout": return t * (2 - t);
     case "easeinout": return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    case "cubicin": return t * t * t;
+    case "cubicout": return 1 - Math.pow(1 - t, 3);
+    case "cubicinout": return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    case "sinein": return 1 - Math.cos((t * Math.PI) / 2);
+    case "sineout": return Math.sin((t * Math.PI) / 2);
+    // c1 = 1.70158 overshoot constant; c3 = c1 + 1. Matches ease() in timeline.rs.
+    case "backout": return 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2);
+    case "elasticout":
+      if (t <= 0) return 0;
+      if (t >= 1) return 1;
+      return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1;
+    case "bounceout": {
+      const n = 7.5625, d = 2.75;
+      if (t < 1 / d) return n * t * t;
+      if (t < 2 / d) { const q = t - 1.5 / d; return n * q * q + 0.75; }
+      if (t < 2.5 / d) { const q = t - 2.25 / d; return n * q * q + 0.9375; }
+      const q = t - 2.625 / d;
+      return n * q * q + 0.984375;
+    }
     default: return t;
   }
 }
@@ -625,6 +718,38 @@ export const EFFECT_CATALOGUE: Array<{ label: string; group: string; make: () =>
   { label: "Mono", group: "Audio", make: () => ({ kind: "mono" }) },
   { label: "Swap channels", group: "Audio", make: () => ({ kind: "swapchannels" }) },
   { label: "Trim silence", group: "Audio", make: () => ({ kind: "trimsilence", threshold: 0.02 }) },
+
+  { label: "Vibrance", group: "Colour", make: () => ({ kind: "vibrance", intensity: 0.5 }) },
+  { label: "Colour balance", group: "Colour", make: () => ({ kind: "colorbalance", r: 0, g: 0, b: 0 }) },
+  { label: "Hue / saturation", group: "Colour", make: () => ({ kind: "huesaturation", hue: 0, saturation: 0, intensity: 0 }) },
+  { label: "Histogram equalise", group: "Colour", make: () => ({ kind: "histeq", strength: 0.5 }) },
+  { label: "Auto levels", group: "Colour", make: () => ({ kind: "autolevels", strength: 0.8 }) },
+  { label: "False colour", group: "Colour", make: () => ({ kind: "falsecolor", preset: "magma" }) },
+  { label: "Sepia", group: "Colour", make: () => ({ kind: "sepia" }) },
+  { label: "Chromatic aberration", group: "Image", make: () => ({ kind: "chromaticaberration", amount: 2 }) },
+  { label: "Scanlines", group: "Image", make: () => ({ kind: "scanlines", amount: 0.4 }) },
+  { label: "Mirror", group: "Image", make: () => ({ kind: "mirror" }) },
+  { label: "Adaptive sharpen", group: "Image", make: () => ({ kind: "adaptivesharpen", strength: 0.5 }) },
+  { label: "Smart blur", group: "Image", make: () => ({ kind: "smartblur", radius: 2, strength: 0.5 }) },
+  { label: "Bilateral smooth", group: "Image", make: () => ({ kind: "bilateral", sigma_s: 2, sigma_r: 0.2 }) },
+  { label: "Wavelet denoise", group: "Image", make: () => ({ kind: "vaguedenoise", threshold: 3 }) },
+  { label: "Chroma denoise", group: "Image", make: () => ({ kind: "chromadenoise", threshold: 20 }) },
+  { label: "Frame blend", group: "Image", make: () => ({ kind: "frameblend", frames: 3 }) },
+  { label: "Deinterlace", group: "Image", make: () => ({ kind: "deinterlace", mode: 0 }) },
+  { label: "Shear", group: "Geometry", make: () => ({ kind: "shear", x: 0.1, y: 0 }) },
+  { label: "Colour key", group: "Keying", make: () => ({ kind: "colorkey", color: "green", similarity: 0.2, blend: 0.1 }) },
+  { label: "HSV key", group: "Keying", make: () => ({ kind: "hsvkey", hue: 120, sat: 0.5, val: 0.5, similarity: 0.2, blend: 0.1 }) },
+
+  { label: "Bass", group: "Audio", make: () => ({ kind: "bass", gain: 4, freq: 100 }) },
+  { label: "Treble", group: "Audio", make: () => ({ kind: "treble", gain: 3, freq: 3000 }) },
+  { label: "Parametric EQ", group: "Audio", make: () => ({ kind: "parametriceq", freq: 1000, width: 1, gain: 3 }) },
+  { label: "Tremolo", group: "Audio", make: () => ({ kind: "tremolo", freq: 5, depth: 0.5 }) },
+  { label: "Vibrato", group: "Audio", make: () => ({ kind: "vibrato", freq: 5, depth: 0.5 }) },
+  { label: "Bit crush", group: "Audio", make: () => ({ kind: "bitcrush", bits: 8, mix: 0.5 }) },
+  { label: "Exciter", group: "Audio", make: () => ({ kind: "exciter", amount: 1 }) },
+  { label: "Sub boost", group: "Audio", make: () => ({ kind: "subboost", amount: 0.5 }) },
+  { label: "Speech normalise", group: "Audio", make: () => ({ kind: "speechnorm", expansion: 2 }) },
+  { label: "Audio denoise", group: "Audio", make: () => ({ kind: "audiodenoise", reduction: 12 }) },
 ];
 
 /** How each effect's parameters reach ffmpeg when animated. Mirrors
