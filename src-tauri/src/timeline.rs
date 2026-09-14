@@ -53,6 +53,14 @@ pub enum Easing {
     EaseIn,
     EaseOut,
     EaseInOut,
+    CubicIn,
+    CubicOut,
+    CubicInOut,
+    SineIn,
+    SineOut,
+    BackOut,
+    ElasticOut,
+    BounceOut,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +191,49 @@ fn ease(p: f64, e: Easing) -> f64 {
                 -1.0 + (4.0 - 2.0 * p) * p
             }
         }
+        Easing::CubicIn => p * p * p,
+        Easing::CubicOut => 1.0 - (1.0 - p).powi(3),
+        Easing::CubicInOut => {
+            if p < 0.5 {
+                4.0 * p * p * p
+            } else {
+                1.0 - (-2.0 * p + 2.0).powi(3) / 2.0
+            }
+        }
+        Easing::SineIn => 1.0 - (p * std::f64::consts::FRAC_PI_2).cos(),
+        Easing::SineOut => (p * std::f64::consts::FRAC_PI_2).sin(),
+        // c1 = 1.70158 is the standard overshoot constant; c3 = c1 + 1.
+        Easing::BackOut => 1.0 + 2.70158 * (p - 1.0).powi(3) + 1.70158 * (p - 1.0).powi(2),
+        Easing::ElasticOut => {
+            if p <= 0.0 {
+                0.0
+            } else if p >= 1.0 {
+                1.0
+            } else {
+                // c4 = 2*PI/3
+                2f64.powf(-10.0 * p) * ((p * 10.0 - 0.75) * 2.0943951).sin() + 1.0
+            }
+        }
+        Easing::BounceOut => bounce_out(p),
+    }
+}
+
+/// Shared by `ease` and its test; the expression form below mirrors this
+/// piecewise definition exactly.
+fn bounce_out(p: f64) -> f64 {
+    const N: f64 = 7.5625;
+    const D: f64 = 2.75;
+    if p < 1.0 / D {
+        N * p * p
+    } else if p < 2.0 / D {
+        let q = p - 1.5 / D;
+        N * q * q + 0.75
+    } else if p < 2.5 / D {
+        let q = p - 2.25 / D;
+        N * q * q + 0.9375
+    } else {
+        let q = p - 2.625 / D;
+        N * q * q + 0.984375
     }
 }
 
@@ -193,6 +244,25 @@ fn ease_expr(p: &str, e: Easing) -> String {
         Easing::EaseIn => format!("({p}*{p})"),
         Easing::EaseOut => format!("({p}*(2-{p}))"),
         Easing::EaseInOut => format!("(if(lt({p},0.5),2*{p}*{p},-1+(4-2*{p})*{p}))"),
+        Easing::CubicIn => format!("({p}*{p}*{p})"),
+        Easing::CubicOut => format!("(1-pow(1-{p},3))"),
+        Easing::CubicInOut => {
+            format!("(if(lt({p},0.5),4*{p}*{p}*{p},1-pow(-2*{p}+2,3)/2))")
+        }
+        Easing::SineIn => format!("(1-cos({p}*1.5707963267948966))"),
+        Easing::SineOut => format!("(sin({p}*1.5707963267948966))"),
+        Easing::BackOut => {
+            format!("(1+2.70158*pow({p}-1,3)+1.70158*pow({p}-1,2))")
+        }
+        Easing::ElasticOut => format!(
+            "(if(lte({p},0),0,if(gte({p},1),1,pow(2,-10*{p})*sin(({p}*10-0.75)*2.0943951023931953)+1)))"
+        ),
+        Easing::BounceOut => format!(
+            "(if(lt({p},0.36363636),7.5625*{p}*{p},\
+if(lt({p},0.72727273),7.5625*pow({p}-0.54545455,2)+0.75,\
+if(lt({p},0.90909091),7.5625*pow({p}-0.81818182,2)+0.9375,\
+7.5625*pow({p}-0.95454545,2)+0.984375))))"
+        ),
     }
 }
 
@@ -615,6 +685,192 @@ pub enum Effect {
         #[serde(default = "d_silence")]
         threshold: f64,
     },
+    /// Saturation that protects already-saturated pixels (`vibrance`).
+    Vibrance {
+        #[serde(default = "p_zero")]
+        intensity: Param,
+    },
+    /// Per-channel midtone lift (`colorbalance`).
+    ColorBalance {
+        #[serde(default = "p_zero")]
+        r: Param,
+        #[serde(default = "p_zero")]
+        g: Param,
+        #[serde(default = "p_zero")]
+        b: Param,
+    },
+    /// Splits red and blue horizontally (`rgbashift`).
+    ChromaticAberration {
+        #[serde(default = "p_zero")]
+        amount: Param,
+    },
+    /// Skew on each axis (`shear`).
+    Shear {
+        #[serde(default = "p_zero")]
+        x: Param,
+        #[serde(default = "p_zero")]
+        y: Param,
+    },
+    /// Key on a flat RGB colour rather than chroma (`colorkey`).
+    ColorKey {
+        #[serde(default = "d_green")]
+        color: String,
+        #[serde(default = "p_point_one")]
+        similarity: Param,
+        #[serde(default = "p_zero")]
+        blend: Param,
+    },
+    /// Key a hue/saturation/value region (`hsvkey`).
+    HsvKey {
+        #[serde(default = "p_zero")]
+        hue: Param,
+        #[serde(default = "p_half")]
+        sat: Param,
+        #[serde(default = "p_half")]
+        val: Param,
+        #[serde(default = "p_point_one")]
+        similarity: Param,
+        #[serde(default = "p_zero")]
+        blend: Param,
+    },
+    /// Average N successive frames (`tmix`) for a shutter-drag look.
+    FrameBlend {
+        #[serde(default = "p_three")]
+        frames: Param,
+    },
+    /// Map luma onto a colour ramp (`pseudocolor`).
+    FalseColor {
+        #[serde(default = "d_preset_magma")]
+        preset: String,
+    },
+    /// Histogram equalisation (`histeq`).
+    HistEq {
+        #[serde(default = "p_zero")]
+        strength: Param,
+    },
+    /// Auto black/white point per frame (`normalize`).
+    AutoLevels {
+        #[serde(default = "p_one")]
+        strength: Param,
+    },
+    /// Deinterlace (`yadif`).
+    Deinterlace {
+        #[serde(default = "d_yadif_mode")]
+        mode: f64,
+    },
+    /// Contrast-adaptive sharpen (`cas`).
+    AdaptiveSharpen {
+        #[serde(default = "p_half")]
+        strength: Param,
+    },
+    /// Chroma-only noise reduction (`chromanr`).
+    ChromaDenoise {
+        #[serde(default = "p_three")]
+        threshold: Param,
+    },
+    /// Hue/saturation with an intensity control (`huesaturation`).
+    HueSaturation {
+        #[serde(default = "p_zero")]
+        hue: Param,
+        #[serde(default = "p_zero")]
+        saturation: Param,
+        #[serde(default = "p_zero")]
+        intensity: Param,
+    },
+    /// Edge-preserving smoothing (`bilateral`).
+    Bilateral {
+        #[serde(default = "p_point_one")]
+        sigma_s: Param,
+        #[serde(default = "p_point_one")]
+        sigma_r: Param,
+    },
+    /// Blur that leaves edges alone (`smartblur`).
+    SmartBlur {
+        #[serde(default = "p_one")]
+        radius: Param,
+        #[serde(default = "p_one")]
+        strength: Param,
+    },
+    /// Wavelet denoiser (`vaguedenoiser`).
+    VagueDenoise {
+        #[serde(default = "p_two")]
+        threshold: Param,
+    },
+    /// Fixed sepia matrix (`colorchannelmixer`).
+    Sepia,
+    /// Darken alternate scanlines for a CRT look.
+    Scanlines {
+        #[serde(default = "p_half")]
+        amount: Param,
+    },
+    /// Reflect the left half onto the right.
+    Mirror,
+
+    // ---- audio ----
+    /// Low shelf (`bass`).
+    Bass {
+        #[serde(default = "p_zero")]
+        gain: Param,
+        #[serde(default = "p_hundred")]
+        freq: Param,
+    },
+    /// High shelf (`treble`).
+    Treble {
+        #[serde(default = "p_zero")]
+        gain: Param,
+        #[serde(default = "p_three_thousand")]
+        freq: Param,
+    },
+    /// One parametric band (`equalizer`).
+    ParametricEq {
+        #[serde(default = "p_thousand")]
+        freq: Param,
+        #[serde(default = "p_one")]
+        width: Param,
+        #[serde(default = "p_zero")]
+        gain: Param,
+    },
+    /// Amplitude modulation (`tremolo`).
+    Tremolo {
+        #[serde(default = "p_two")]
+        freq: Param,
+        #[serde(default = "p_half")]
+        depth: Param,
+    },
+    /// Pitch modulation (`vibrato`).
+    Vibrato {
+        #[serde(default = "p_two")]
+        freq: Param,
+        #[serde(default = "p_half")]
+        depth: Param,
+    },
+    /// Bit-depth reduction (`acrusher`).
+    BitCrush {
+        #[serde(default = "p_two")]
+        bits: Param,
+        #[serde(default = "p_half")]
+        mix: Param,
+    },
+    /// Harmonic exciter (`aexciter`).
+    Exciter {
+        #[serde(default = "p_one")]
+        amount: Param,
+    },
+    /// Sub-bass reinforcement (`asubboost`).
+    SubBoost {
+        #[serde(default = "p_half")]
+        amount: Param,
+    },
+    /// Level dialogue without pumping (`speechnorm`).
+    SpeechNorm {
+        #[serde(default = "p_two")]
+        expansion: Param,
+    },
+    /// Spectral noise reduction (`afftdn`).
+    AudioDenoise {
+        #[serde(default = "p_hundred")]
+        reduction: Param,
+    },
     /// Any installed frei0r plugin. This is how the effect count reaches the
     /// hundreds: the same plugin library Kdenlive draws on. Parameters are
     /// frei0r's own normalised 0..1 values, in the plugin's declared order.
@@ -736,6 +992,16 @@ impl Effect {
                 | Effect::Mono
                 | Effect::SwapChannels
                 | Effect::TrimSilence { .. }
+                | Effect::Bass { .. }
+                | Effect::Treble { .. }
+                | Effect::ParametricEq { .. }
+                | Effect::Tremolo { .. }
+                | Effect::Vibrato { .. }
+                | Effect::BitCrush { .. }
+                | Effect::Exciter { .. }
+                | Effect::SubBoost { .. }
+                | Effect::SpeechNorm { .. }
+                | Effect::AudioDenoise { .. }
         )
     }
 
@@ -800,7 +1066,37 @@ impl Effect {
             | Effect::Limiter { .. }
             | Effect::Mono
             | Effect::SwapChannels
-            | Effect::TrimSilence { .. } => "static",
+            | Effect::TrimSilence { .. }
+            | Effect::Vibrance { .. }
+            | Effect::ColorBalance { .. }
+            | Effect::ChromaticAberration { .. }
+            | Effect::Shear { .. }
+            | Effect::ColorKey { .. }
+            | Effect::HsvKey { .. }
+            | Effect::FrameBlend { .. }
+            | Effect::FalseColor { .. }
+            | Effect::HistEq { .. }
+            | Effect::AutoLevels { .. }
+            | Effect::Deinterlace { .. }
+            | Effect::AdaptiveSharpen { .. }
+            | Effect::ChromaDenoise { .. }
+            | Effect::HueSaturation { .. }
+            | Effect::Bilateral { .. }
+            | Effect::SmartBlur { .. }
+            | Effect::VagueDenoise { .. }
+            | Effect::Sepia
+            | Effect::Scanlines { .. }
+            | Effect::Mirror
+            | Effect::Bass { .. }
+            | Effect::Treble { .. }
+            | Effect::ParametricEq { .. }
+            | Effect::Tremolo { .. }
+            | Effect::Vibrato { .. }
+            | Effect::BitCrush { .. }
+            | Effect::Exciter { .. }
+            | Effect::SubBoost { .. }
+            | Effect::SpeechNorm { .. }
+            | Effect::AudioDenoise { .. } => "static",
         }
     }
 
@@ -1166,6 +1462,155 @@ b='floor(val/(256/max(2,{n})))*(256/max(2,{n}))'"
                 "silenceremove=start_periods=1:start_threshold={t:.4}:stop_periods=1:stop_threshold={t:.4}",
                 t = threshold.clamp(0.0, 1.0)
             )),
+            // ---- added effects: every value is clamped to the range the
+            // underlying filter documents, so a wild keyframe cannot produce a
+            // graph ffmpeg rejects at render time.
+            Effect::Vibrance { intensity } => Compiled::f(format!(
+                "vibrance=intensity={:.4}",
+                intensity.first().clamp(-2.0, 2.0)
+            )),
+            Effect::ColorBalance { r, g, b } => Compiled::f(format!(
+                "colorbalance=rm={:.4}:gm={:.4}:bm={:.4}",
+                r.first().clamp(-1.0, 1.0),
+                g.first().clamp(-1.0, 1.0),
+                b.first().clamp(-1.0, 1.0)
+            )),
+            Effect::ChromaticAberration { amount } => {
+                let a = amount.first().clamp(-255.0, 255.0).round() as i32;
+                Compiled::f(format!("rgbashift=rh={a}:bh={}", -a))
+            }
+            Effect::Shear { x, y } => Compiled::f(format!(
+                "shear=shx={:.4}:shy={:.4}",
+                x.first().clamp(-2.0, 2.0),
+                y.first().clamp(-2.0, 2.0)
+            )),
+            Effect::ColorKey { color, similarity, blend } => Compiled::f(format!(
+                "colorkey={}:{:.4}:{:.4}",
+                sanitise_color(color),
+                similarity.first().clamp(0.01, 1.0),
+                blend.first().clamp(0.0, 1.0)
+            )),
+            Effect::HsvKey { hue, sat, val, similarity, blend } => Compiled::f(format!(
+                "hsvkey=hue={:.4}:sat={:.4}:val={:.4}:similarity={:.4}:blend={:.4}",
+                hue.first(),
+                sat.first().clamp(-1.0, 1.0),
+                val.first().clamp(-1.0, 1.0),
+                similarity.first().clamp(0.01, 1.0),
+                blend.first().clamp(0.0, 1.0)
+            )),
+            Effect::FrameBlend { frames } => Compiled::f(format!(
+                "tmix=frames={}",
+                (frames.first().round() as i64).clamp(1, 128)
+            )),
+            Effect::FalseColor { preset } => Compiled::f(format!(
+                "pseudocolor=preset={}",
+                sanitise_preset(preset)
+            )),
+            Effect::HistEq { strength } => Compiled::f(format!(
+                "histeq=strength={:.4}",
+                strength.first().clamp(0.0, 1.0)
+            )),
+            Effect::AutoLevels { strength } => Compiled::f(format!(
+                "normalize=strength={:.4}",
+                strength.first().clamp(0.0, 1.0)
+            )),
+            Effect::Deinterlace { mode } => Compiled::f(format!(
+                "yadif=mode={}",
+                (mode.round() as i64).clamp(0, 3)
+            )),
+            Effect::AdaptiveSharpen { strength } => Compiled::f(format!(
+                "cas=strength={:.4}",
+                strength.first().clamp(0.0, 1.0)
+            )),
+            Effect::ChromaDenoise { threshold } => Compiled::f(format!(
+                "chromanr=thres={:.4}",
+                threshold.first().clamp(1.0, 200.0)
+            )),
+            Effect::HueSaturation { hue, saturation, intensity } => Compiled::f(format!(
+                "huesaturation=hue={:.4}:saturation={:.4}:intensity={:.4}",
+                hue.first().clamp(-180.0, 180.0),
+                saturation.first().clamp(-1.0, 1.0),
+                intensity.first().clamp(0.0, 1.0)
+            )),
+            Effect::Bilateral { sigma_s, sigma_r } => Compiled::f(format!(
+                "bilateral=sigmaS={:.4}:sigmaR={:.4}",
+                sigma_s.first().clamp(0.0, 512.0),
+                sigma_r.first().clamp(0.0, 1.0)
+            )),
+            Effect::SmartBlur { radius, strength } => Compiled::f(format!(
+                "smartblur=luma_radius={:.4}:luma_strength={:.4}",
+                radius.first().clamp(0.1, 5.0),
+                strength.first().clamp(-1.0, 1.0)
+            )),
+            Effect::VagueDenoise { threshold } => Compiled::f(format!(
+                "vaguedenoiser=threshold={:.4}",
+                threshold.first().clamp(0.0, 100.0)
+            )),
+            Effect::Sepia => Compiled::f(
+                "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131:0".into(),
+            ),
+            Effect::Scanlines { amount } => {
+                // Darken every other row. Chroma is passed through untouched.
+                let a = amount.first().clamp(0.0, 1.0);
+                Compiled::f(format!(
+                    "geq=lum='p(X,Y)*(1-{a:.4}*mod(Y,2))':cb='p(X,Y)':cr='p(X,Y)'"
+                ))
+            }
+            Effect::Mirror => Compiled::f(
+                "geq=lum='p(if(lt(X,W/2),X,W-1-X),Y)':\
+cb='p(if(lt(X,W/2),X,W-1-X),Y)':cr='p(if(lt(X,W/2),X,W-1-X),Y)'"
+                    .into(),
+            ),
+
+            // ---- added audio ----
+            Effect::Bass { gain, freq } => Compiled::f(format!(
+                "bass=g={:.4}:f={:.4}",
+                gain.first().clamp(-30.0, 30.0),
+                freq.first().clamp(20.0, 2000.0)
+            )),
+            Effect::Treble { gain, freq } => Compiled::f(format!(
+                "treble=g={:.4}:f={:.4}",
+                gain.first().clamp(-30.0, 30.0),
+                freq.first().clamp(1000.0, 20000.0)
+            )),
+            Effect::ParametricEq { freq, width, gain } => Compiled::f(format!(
+                "equalizer=f={:.4}:width_type=q:w={:.4}:g={:.4}",
+                freq.first().clamp(20.0, 20000.0),
+                width.first().clamp(0.01, 10.0),
+                gain.first().clamp(-30.0, 30.0)
+            )),
+            Effect::Tremolo { freq, depth } => Compiled::f(format!(
+                "tremolo=f={:.4}:d={:.4}",
+                freq.first().clamp(0.1, 20000.0),
+                depth.first().clamp(0.0, 1.0)
+            )),
+            Effect::Vibrato { freq, depth } => Compiled::f(format!(
+                "vibrato=f={:.4}:d={:.4}",
+                freq.first().clamp(0.1, 20000.0),
+                depth.first().clamp(0.0, 1.0)
+            )),
+            Effect::BitCrush { bits, mix } => Compiled::f(format!(
+                "acrusher=bits={:.4}:mix={:.4}",
+                bits.first().clamp(1.0, 64.0),
+                mix.first().clamp(0.0, 1.0)
+            )),
+            Effect::Exciter { amount } => Compiled::f(format!(
+                "aexciter=amount={:.4}",
+                amount.first().clamp(0.0, 64.0)
+            )),
+            Effect::SubBoost { amount } => Compiled::f(format!(
+                "asubboost=wet={:.4}",
+                amount.first().clamp(0.0, 1.0)
+            )),
+            Effect::SpeechNorm { expansion } => Compiled::f(format!(
+                "speechnorm=e={:.4}",
+                expansion.first().clamp(1.0, 50.0)
+            )),
+            Effect::AudioDenoise { reduction } => Compiled::f(format!(
+                "afftdn=nr={:.4}",
+                reduction.first().clamp(0.01, 97.0)
+            )),
+
             Effect::Frei0r { name, params } => {
                 let plugin = sanitise_plugin(name);
                 if plugin.is_empty() {
@@ -1228,6 +1673,31 @@ fn escape_filter_path(p: &str) -> String {
 
 /// Plugin names are interpolated into a filter string, so allow only the
 /// characters frei0r plugin filenames actually use.
+/// `pseudocolor` preset names are a closed set; anything else falls back to a
+/// known-good one rather than being pasted into the graph.
+fn sanitise_preset(name: &str) -> String {
+    const PRESETS: [&str; 13] = [
+        "magma",
+        "inferno",
+        "plasma",
+        "viridis",
+        "turbo",
+        "cividis",
+        "range1",
+        "range2",
+        "shadows",
+        "highlights",
+        "solar",
+        "nominal",
+        "preferred",
+    ];
+    if PRESETS.contains(&name) {
+        name.to_string()
+    } else {
+        "magma".into()
+    }
+}
+
 fn sanitise_plugin(name: &str) -> String {
     if name.is_empty() || name.len() > 64 {
         return String::new();
@@ -1377,6 +1847,18 @@ pub enum BlendMode {
     Exclusion,
     Addition,
     Subtract,
+    LinearLight,
+    PinLight,
+    VividLight,
+    HardMix,
+    Divide,
+    Glow,
+    Reflect,
+    Freeze,
+    Heat,
+    Negation,
+    Phoenix,
+    GrainMerge,
 }
 
 impl BlendMode {
@@ -1397,10 +1879,40 @@ impl BlendMode {
             BlendMode::Exclusion => "exclusion",
             BlendMode::Addition => "addition",
             BlendMode::Subtract => "subtract",
+            BlendMode::LinearLight => "linearlight",
+            BlendMode::PinLight => "pinlight",
+            BlendMode::VividLight => "vividlight",
+            BlendMode::HardMix => "hardmix",
+            BlendMode::Divide => "divide",
+            BlendMode::Glow => "glow",
+            BlendMode::Reflect => "reflect",
+            BlendMode::Freeze => "freeze",
+            BlendMode::Heat => "heat",
+            BlendMode::Negation => "negation",
+            BlendMode::Phoenix => "phoenix",
+            BlendMode::GrainMerge => "grainmerge",
         }
     }
 }
 
+fn p_two() -> Param {
+    Param::Static(2.0)
+}
+fn p_half() -> Param {
+    Param::Static(0.5)
+}
+fn p_three() -> Param {
+    Param::Static(3.0)
+}
+fn p_thousand() -> Param {
+    Param::Static(1000.0)
+}
+fn d_preset_magma() -> String {
+    "magma".into()
+}
+fn d_yadif_mode() -> f64 {
+    0.0
+}
 fn p_hundred() -> Param {
     Param::Static(100.0)
 }
@@ -1473,6 +1985,21 @@ pub enum TransitionKind {
     DipToBlack,
     /// The incoming clip wipes in from the left.
     WipeLeft,
+    WipeRight,
+    WipeUp,
+    WipeDown,
+    DipToWhite,
+    IrisOpen,
+    IrisClose,
+    BarnDoorOpen,
+    BarnDoorClose,
+    ClockWipe,
+    SlideLeft,
+    SlideRight,
+    SlideUp,
+    SlideDown,
+    PixelDissolve,
+    DiagonalWipe,
 }
 
 /// A transition at the head of a clip. Because clips composite by overlay, a
@@ -2596,6 +3123,112 @@ pub fn render_args(
                         pipe.push("format=yuva420p".into());
                         pipe.push(format!(
                             "geq=lum='p(X,Y)':a='if(lt(X,W*min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::WipeRight => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(gt(X,W*(1-min(1,T/{d:.4}))),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::WipeDown => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(Y,H*min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::WipeUp => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(gt(Y,H*(1-min(1,T/{d:.4}))),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::DiagonalWipe => {
+                        // Edge runs corner to corner, so the test is on X+Y.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(X+Y,(W+H)*min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::DipToWhite => {
+                        // Like DipToBlack but through the opposite extreme.
+                        pipe.push(format!("fade=t=in:st=0:d={d:.4}:color=white"));
+                    }
+                    TransitionKind::IrisOpen => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(hypot(X-W/2,Y-H/2),\
+min(1,T/{d:.4})*hypot(W/2,H/2)),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::IrisClose => {
+                        // Reveals from the edges inward instead of outward.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(gt(hypot(X-W/2,Y-H/2),\
+(1-min(1,T/{d:.4}))*hypot(W/2,H/2)),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::BarnDoorOpen => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(abs(X-W/2),min(1,T/{d:.4})*W/2),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::BarnDoorClose => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(gt(abs(X-W/2),(1-min(1,T/{d:.4}))*W/2),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::ClockWipe => {
+                        // Angular sweep. atan2 is -PI..PI, so shift into 0..2PI.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(mod(atan2(Y-H/2,X-W/2)+PI,2*PI),\
+min(1,T/{d:.4})*2*PI),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::PixelDissolve => {
+                        // A fixed per-pixel noise threshold crossed over time, so
+                        // the pattern is stable rather than shimmering each frame.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y)':a='if(lt(random(X+Y*W),min(1,T/{d:.4})),alpha(X,Y),0)'"
+                        ));
+                    }
+                    TransitionKind::SlideRight => {
+                        // The incoming clip travels in from the left edge. Each
+                        // plane samples at the same offset so chroma tracks luma.
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X+W*(1-min(1,T/{d:.4})),Y)':\
+cb='p(X+W*(1-min(1,T/{d:.4})),Y)':cr='p(X+W*(1-min(1,T/{d:.4})),Y)':\
+a='if(lt(X,W*min(1,T/{d:.4})),alpha(X+W*(1-min(1,T/{d:.4})),Y),0)'"
+                        ));
+                    }
+                    TransitionKind::SlideLeft => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X-W*(1-min(1,T/{d:.4})),Y)':\
+cb='p(X-W*(1-min(1,T/{d:.4})),Y)':cr='p(X-W*(1-min(1,T/{d:.4})),Y)':\
+a='if(gt(X,W*(1-min(1,T/{d:.4}))),alpha(X-W*(1-min(1,T/{d:.4})),Y),0)'"
+                        ));
+                    }
+                    TransitionKind::SlideDown => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y+H*(1-min(1,T/{d:.4})))':\
+cb='p(X,Y+H*(1-min(1,T/{d:.4})))':cr='p(X,Y+H*(1-min(1,T/{d:.4})))':\
+a='if(lt(Y,H*min(1,T/{d:.4})),alpha(X,Y+H*(1-min(1,T/{d:.4}))),0)'"
+                        ));
+                    }
+                    TransitionKind::SlideUp => {
+                        pipe.push("format=yuva420p".into());
+                        pipe.push(format!(
+                            "geq=lum='p(X,Y-H*(1-min(1,T/{d:.4})))':\
+cb='p(X,Y-H*(1-min(1,T/{d:.4})))':cr='p(X,Y-H*(1-min(1,T/{d:.4})))':\
+a='if(gt(Y,H*(1-min(1,T/{d:.4}))),alpha(X,Y-H*(1-min(1,T/{d:.4}))),0)'"
                         ));
                     }
                 }
@@ -4605,6 +5238,110 @@ mod tests {
                 name: "glow".into(),
                 params: vec![Param::Static(0.5)],
             },
+            Effect::Vibrance {
+                intensity: Param::Static(0.5),
+            },
+            Effect::ColorBalance {
+                r: Param::Static(0.1),
+                g: Param::Static(0.0),
+                b: Param::Static(-0.1),
+            },
+            Effect::ChromaticAberration {
+                amount: Param::Static(2.0),
+            },
+            Effect::Shear {
+                x: Param::Static(0.1),
+                y: Param::Static(0.0),
+            },
+            Effect::ColorKey {
+                color: "green".into(),
+                similarity: Param::Static(0.2),
+                blend: Param::Static(0.1),
+            },
+            Effect::HsvKey {
+                hue: Param::Static(120.0),
+                sat: Param::Static(0.5),
+                val: Param::Static(0.5),
+                similarity: Param::Static(0.2),
+                blend: Param::Static(0.1),
+            },
+            Effect::FrameBlend {
+                frames: Param::Static(3.0),
+            },
+            Effect::FalseColor {
+                preset: "magma".into(),
+            },
+            Effect::HistEq {
+                strength: Param::Static(0.5),
+            },
+            Effect::AutoLevels {
+                strength: Param::Static(0.8),
+            },
+            Effect::Deinterlace { mode: 0.0 },
+            Effect::AdaptiveSharpen {
+                strength: Param::Static(0.5),
+            },
+            Effect::ChromaDenoise {
+                threshold: Param::Static(20.0),
+            },
+            Effect::HueSaturation {
+                hue: Param::Static(20.0),
+                saturation: Param::Static(0.2),
+                intensity: Param::Static(0.3),
+            },
+            Effect::Bilateral {
+                sigma_s: Param::Static(2.0),
+                sigma_r: Param::Static(0.2),
+            },
+            Effect::SmartBlur {
+                radius: Param::Static(2.0),
+                strength: Param::Static(0.5),
+            },
+            Effect::VagueDenoise {
+                threshold: Param::Static(3.0),
+            },
+            Effect::Sepia,
+            Effect::Scanlines {
+                amount: Param::Static(0.4),
+            },
+            Effect::Mirror,
+            Effect::Bass {
+                gain: Param::Static(4.0),
+                freq: Param::Static(100.0),
+            },
+            Effect::Treble {
+                gain: Param::Static(3.0),
+                freq: Param::Static(3000.0),
+            },
+            Effect::ParametricEq {
+                freq: Param::Static(1000.0),
+                width: Param::Static(1.0),
+                gain: Param::Static(3.0),
+            },
+            Effect::Tremolo {
+                freq: Param::Static(5.0),
+                depth: Param::Static(0.5),
+            },
+            Effect::Vibrato {
+                freq: Param::Static(5.0),
+                depth: Param::Static(0.5),
+            },
+            Effect::BitCrush {
+                bits: Param::Static(8.0),
+                mix: Param::Static(0.5),
+            },
+            Effect::Exciter {
+                amount: Param::Static(1.0),
+            },
+            Effect::SubBoost {
+                amount: Param::Static(0.5),
+            },
+            Effect::SpeechNorm {
+                expansion: Param::Static(2.0),
+            },
+            Effect::AudioDenoise {
+                reduction: Param::Static(12.0),
+            },
         ];
         for e in &all {
             let route = e.animation_route();
@@ -4617,7 +5354,7 @@ mod tests {
         }
         assert_eq!(
             all.len(),
-            17,
+            47,
             "catalogue size changed — update the UI list too"
         );
     }
@@ -4906,6 +5643,51 @@ mod tests {
             g.contains("0.0000/1.0000"),
             "out-of-range points must clamp: {g}"
         );
+    }
+
+    /// Guards against the render test passing vacuously: prove each new
+    /// transition actually reaches the filter graph, by looking for the
+    /// expression that is unique to it.
+    #[test]
+    fn each_transition_emits_its_own_expression() {
+        let cases: Vec<(TransitionKind, &str)> = vec![
+            (TransitionKind::WipeRight, "W*(1-min(1,T/"),
+            (TransitionKind::WipeDown, "lt(Y,H*min(1,T/"),
+            (TransitionKind::WipeUp, "gt(Y,H*(1-min(1,T/"),
+            (TransitionKind::DiagonalWipe, "X+Y,(W+H)"),
+            (TransitionKind::DipToWhite, "color=white"),
+            (TransitionKind::IrisOpen, "hypot(X-W/2,Y-H/2)"),
+            (TransitionKind::IrisClose, "hypot(X-W/2,Y-H/2)"),
+            (TransitionKind::BarnDoorOpen, "abs(X-W/2)"),
+            (TransitionKind::BarnDoorClose, "abs(X-W/2)"),
+            (TransitionKind::ClockWipe, "atan2(Y-H/2,X-W/2)"),
+            (TransitionKind::PixelDissolve, "random(X+Y*W)"),
+            (TransitionKind::SlideLeft, "p(X-W*(1-min(1,T/"),
+            (TransitionKind::SlideRight, "p(X+W*(1-min(1,T/"),
+            (TransitionKind::SlideUp, "p(X,Y-H*(1-min(1,T/"),
+            (TransitionKind::SlideDown, "p(X,Y+H*(1-min(1,T/"),
+        ];
+        let src = temp_source("transexpr");
+        for (kind, needle) in cases {
+            let a = media_clip("a", &src, 0.0, 0.0, 4.0);
+            let mut b = media_clip("b", &src, 4.0, 2.0, 6.0);
+            b.transition_in = Some(Transition {
+                kind,
+                duration: 1.0,
+            });
+            let p = Project {
+                tracks: vec![video_track(vec![a, b])],
+                ..Default::default()
+            };
+            let resolved = apply_transitions(&p);
+            let g = render_args(&resolved, &profile(), Path::new("/tmp/o.mp4"), None)
+                .unwrap()
+                .join(" ");
+            assert!(
+                g.contains(needle),
+                "{kind:?} did not emit {needle:?} into the graph"
+            );
+        }
     }
 
     #[test]
@@ -7382,6 +8164,124 @@ mod e2e {
                     blend: Param::Static(0.05),
                 },
             ),
+            (
+                "vibrance",
+                Effect::Vibrance {
+                    intensity: Param::Static(0.5),
+                },
+            ),
+            (
+                "colorbalance",
+                Effect::ColorBalance {
+                    r: Param::Static(0.1),
+                    g: Param::Static(0.0),
+                    b: Param::Static(-0.1),
+                },
+            ),
+            (
+                "chromaticaberration",
+                Effect::ChromaticAberration {
+                    amount: Param::Static(2.0),
+                },
+            ),
+            (
+                "shear",
+                Effect::Shear {
+                    x: Param::Static(0.1),
+                    y: Param::Static(0.0),
+                },
+            ),
+            (
+                "colorkey",
+                Effect::ColorKey {
+                    color: "green".into(),
+                    similarity: Param::Static(0.2),
+                    blend: Param::Static(0.1),
+                },
+            ),
+            (
+                "hsvkey",
+                Effect::HsvKey {
+                    hue: Param::Static(120.0),
+                    sat: Param::Static(0.5),
+                    val: Param::Static(0.5),
+                    similarity: Param::Static(0.2),
+                    blend: Param::Static(0.1),
+                },
+            ),
+            (
+                "frameblend",
+                Effect::FrameBlend {
+                    frames: Param::Static(3.0),
+                },
+            ),
+            (
+                "falsecolor",
+                Effect::FalseColor {
+                    preset: "magma".into(),
+                },
+            ),
+            (
+                "histeq",
+                Effect::HistEq {
+                    strength: Param::Static(0.5),
+                },
+            ),
+            (
+                "autolevels",
+                Effect::AutoLevels {
+                    strength: Param::Static(0.8),
+                },
+            ),
+            ("deinterlace", Effect::Deinterlace { mode: 0.0 }),
+            (
+                "adaptivesharpen",
+                Effect::AdaptiveSharpen {
+                    strength: Param::Static(0.5),
+                },
+            ),
+            (
+                "chromadenoise",
+                Effect::ChromaDenoise {
+                    threshold: Param::Static(20.0),
+                },
+            ),
+            (
+                "huesaturation",
+                Effect::HueSaturation {
+                    hue: Param::Static(20.0),
+                    saturation: Param::Static(0.2),
+                    intensity: Param::Static(0.3),
+                },
+            ),
+            (
+                "bilateral",
+                Effect::Bilateral {
+                    sigma_s: Param::Static(2.0),
+                    sigma_r: Param::Static(0.2),
+                },
+            ),
+            (
+                "smartblur",
+                Effect::SmartBlur {
+                    radius: Param::Static(2.0),
+                    strength: Param::Static(0.5),
+                },
+            ),
+            (
+                "vaguedenoise",
+                Effect::VagueDenoise {
+                    threshold: Param::Static(3.0),
+                },
+            ),
+            ("sepia", Effect::Sepia),
+            (
+                "scanlines",
+                Effect::Scanlines {
+                    amount: Param::Static(0.4),
+                },
+            ),
+            ("mirror", Effect::Mirror),
         ];
 
         let audio_cases: Vec<(&str, Effect)> = vec![
@@ -7444,6 +8344,73 @@ mod e2e {
                     out_secs: 0.2,
                 },
             ),
+            (
+                "bass",
+                Effect::Bass {
+                    gain: Param::Static(4.0),
+                    freq: Param::Static(100.0),
+                },
+            ),
+            (
+                "treble",
+                Effect::Treble {
+                    gain: Param::Static(3.0),
+                    freq: Param::Static(3000.0),
+                },
+            ),
+            (
+                "parametriceq",
+                Effect::ParametricEq {
+                    freq: Param::Static(1000.0),
+                    width: Param::Static(1.0),
+                    gain: Param::Static(3.0),
+                },
+            ),
+            (
+                "tremolo",
+                Effect::Tremolo {
+                    freq: Param::Static(5.0),
+                    depth: Param::Static(0.5),
+                },
+            ),
+            (
+                "vibrato",
+                Effect::Vibrato {
+                    freq: Param::Static(5.0),
+                    depth: Param::Static(0.5),
+                },
+            ),
+            (
+                "bitcrush",
+                Effect::BitCrush {
+                    bits: Param::Static(8.0),
+                    mix: Param::Static(0.5),
+                },
+            ),
+            (
+                "exciter",
+                Effect::Exciter {
+                    amount: Param::Static(1.0),
+                },
+            ),
+            (
+                "subboost",
+                Effect::SubBoost {
+                    amount: Param::Static(0.5),
+                },
+            ),
+            (
+                "speechnorm",
+                Effect::SpeechNorm {
+                    expansion: Param::Static(2.0),
+                },
+            ),
+            (
+                "audiodenoise",
+                Effect::AudioDenoise {
+                    reduction: Param::Static(12.0),
+                },
+            ),
         ];
 
         let mut failures: Vec<String> = Vec::new();
@@ -7469,6 +8436,145 @@ mod e2e {
         assert!(
             failures.is_empty(),
             "ffmpeg rejected {} effect(s):\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+    }
+
+    /// `ease` (Rust) and `ease_expr` (ffmpeg) are two implementations of the
+    /// same curves, and nothing stopped them drifting apart. Render the
+    /// expression ffmpeg actually evaluates and compare it to the reference.
+    ///
+    /// The value is encoded as `128 + 80*v`, and clipped: ElasticOut peaks at
+    /// ~1.354, and geq *wraps* out-of-range luma rather than saturating, so a
+    /// tighter scale would silently decode as a wildly negative number.
+    #[test]
+    fn ease_expr_matches_the_rust_reference() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = super::tests::render_lock();
+
+        let all = [
+            Easing::Linear,
+            Easing::Hold,
+            Easing::EaseIn,
+            Easing::EaseOut,
+            Easing::EaseInOut,
+            Easing::CubicIn,
+            Easing::CubicOut,
+            Easing::CubicInOut,
+            Easing::SineIn,
+            Easing::SineOut,
+            Easing::BackOut,
+            Easing::ElasticOut,
+            Easing::BounceOut,
+        ];
+
+        let mut failures: Vec<String> = Vec::new();
+        for e in all {
+            let expr = super::ease_expr("(X/(W-1))", e);
+            let out = Command::new("ffmpeg")
+                .args([
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=black:s=256x2:r=1:d=1",
+                ])
+                .arg("-vf")
+                .arg(format!("format=gray,geq=lum='clip(128+80*({expr}),0,255)'"))
+                .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"])
+                .output()
+                .expect("ffmpeg should run");
+            if !out.status.success() {
+                failures.push(format!("{e:?}: ffmpeg rejected {expr}"));
+                continue;
+            }
+            let b = out.stdout;
+            if b.len() < 256 {
+                failures.push(format!("{e:?}: short frame ({} bytes)", b.len()));
+                continue;
+            }
+            for x in (0..256).step_by(17) {
+                let p = x as f64 / 255.0;
+                let want = super::ease(p, e);
+                let got = (b[x] as f64 - 128.0) / 80.0;
+                if (want - got).abs() > 0.03 {
+                    failures.push(format!("{e:?} at p={p:.3}: rust={want:.4} ffmpeg={got:.4}"));
+                }
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "{} easing mismatch(es):\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+    }
+
+    /// Each transition compiles to a per-pixel alpha expression, and a typo in
+    /// one of those is invisible until render time. So render every kind and
+    /// collect the rejections rather than stopping at the first.
+    #[test]
+    fn every_transition_renders() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = super::tests::render_lock();
+        let src = make_media("alltrans", 2.0);
+
+        let kinds: Vec<(&str, TransitionKind)> = vec![
+            ("dissolve", TransitionKind::Dissolve),
+            ("diptoblack", TransitionKind::DipToBlack),
+            ("diptowhite", TransitionKind::DipToWhite),
+            ("wipeleft", TransitionKind::WipeLeft),
+            ("wiperight", TransitionKind::WipeRight),
+            ("wipeup", TransitionKind::WipeUp),
+            ("wipedown", TransitionKind::WipeDown),
+            ("diagonalwipe", TransitionKind::DiagonalWipe),
+            ("irisopen", TransitionKind::IrisOpen),
+            ("irisclose", TransitionKind::IrisClose),
+            ("barndooropen", TransitionKind::BarnDoorOpen),
+            ("barndoorclose", TransitionKind::BarnDoorClose),
+            ("clockwipe", TransitionKind::ClockWipe),
+            ("pixeldissolve", TransitionKind::PixelDissolve),
+            ("slideleft", TransitionKind::SlideLeft),
+            ("slideright", TransitionKind::SlideRight),
+            ("slideup", TransitionKind::SlideUp),
+            ("slidedown", TransitionKind::SlideDown),
+        ];
+
+        let mut failures: Vec<String> = Vec::new();
+        for (name, kind) in kinds {
+            let a = clip("a", &src, 0.0, 0.0, 1.0);
+            let mut b = clip("b", &src, 1.0, 0.5, 1.5);
+            b.transition_in = Some(Transition {
+                kind,
+                duration: 0.4,
+            });
+            let project = Project {
+                tracks: vec![track("V1", vec![a, b])],
+                width: 160,
+                height: 120,
+                fps: 10,
+                ..Default::default()
+            };
+            let resolved = apply_transitions(&project);
+            let out = scratch(&format!("odyssey-trans-{name}.webm"));
+            if let Err(e) = render(&resolved, &preview_profile(), &out) {
+                let detail = format!("{e}");
+                let last = detail.lines().last().unwrap_or("").trim().to_string();
+                failures.push(format!("{name}: {last}"));
+            }
+            let _ = std::fs::remove_file(&out);
+        }
+
+        assert!(
+            failures.is_empty(),
+            "ffmpeg rejected {} transition(s):\n{}",
             failures.len(),
             failures.join("\n")
         );
