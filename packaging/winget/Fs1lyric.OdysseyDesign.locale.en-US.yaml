@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: Fs1lyric.OdysseyDesign
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: Nabhan Lyric Chowdhury
+PublisherUrl: https://github.com/Fs1lyric
+PublisherSupportUrl: https://github.com/Fs1lyric/odyssey-design/issues
+PackageName: Odyssey Design
+PackageUrl: https://github.com/Fs1lyric/odyssey-design
+License: MIT
+LicenseUrl: https://github.com/Fs1lyric/odyssey-design/blob/main/LICENSE
+Copyright: Copyright (c) Nabhan Lyric Chowdhury
+ShortDescription: Local-first editor for documents, spreadsheets, decks and video
+Description: |-
+  Odyssey Design is a local-first desktop application with four editors over a
+  single record model: rich-text documents, a spreadsheet with a formula engine
+  written in Rust, slide decks with a presenter mode, and a multi-track
+  non-linear video editor built against ffmpeg.
+
+  Everything is stored on the machine in one SQLite file. There is no account,
+  no server and no sync.
+
+  The video editor needs ffmpeg and ffprobe on PATH.
+Moniker: odyssey-design
+Tags:
+  - editor
+  - video
+  - video-editor
+  - spreadsheet
+  - presentation
+  - office
+  - local-first
+  - ffmpeg
+ReleaseNotesUrl: https://github.com/Fs1lyric/odyssey-design/releases/tag/v0.1.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

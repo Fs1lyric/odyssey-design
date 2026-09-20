@@ -2,7 +2,7 @@
   "_comment": "Written by packaging/sync-release.sh. Editing by hand is fine, but the script will overwrite it on the next release.",
   "version": "0.1.0",
   "tag": "v0.1.0",
-  "published": false,
+  "published": true,
   "repo": "Fs1lyric/odyssey-design",
   "assets": [
     {
@@ -10,8 +10,48 @@
       "arch": "x86_64",
       "kind": "Self-extracting installer",
       "file": "OdysseyDesign_0.1.0_Linux.run",
-      "bytes": 3073234,
-      "sha256": "2051ed8003f15aea8e28be695e766e1ddd556e7390fc7bcb7e761e4243a62c43"
+      "bytes": 3218790,
+      "sha256": "86091041410d24d60b6ed8feb62876fee7696f01a09070f72f1c4a6d98083e92"
+    },
+    {
+      "platform": "Linux",
+      "arch": "amd64",
+      "kind": "Debian package",
+      "file": "OdysseyDesign_0.1.0_amd64.deb",
+      "bytes": 4327652,
+      "sha256": "d0b4b946f8737dc1dec445f2bfcdaf136855b4e5f8e9c2f7cd422d67cc96578d"
+    },
+    {
+      "platform": "Windows",
+      "arch": "x64",
+      "kind": "MSI installer",
+      "file": "OdysseyDesign_0.1.0_Windows_x64.msi",
+      "bytes": 3878912,
+      "sha256": "4006bf3b11257925d0e528e7e83ae203fe7f4162fe2ebd00fbad69ebf29f0560"
+    },
+    {
+      "platform": "Windows",
+      "arch": "x64",
+      "kind": "Portable archive",
+      "file": "OdysseyDesign_0.1.0_Windows_x64_portable.zip",
+      "bytes": 3644208,
+      "sha256": "89641a70c15f2a86f7e1b04aedb9554258f95654949ab68d6139330cb07ea90c"
+    },
+    {
+      "platform": "macOS",
+      "arch": "arm64",
+      "kind": "Disk image",
+      "file": "OdysseyDesign_0.1.0_macOS_arm64.dmg",
+      "bytes": 3577386,
+      "sha256": "f1f4aed05b340b87f87b652d09c91bb1c64ff171f2b745cba1db5e3fb3db3ee2"
+    },
+    {
+      "platform": "macOS",
+      "arch": "x64",
+      "kind": "Disk image",
+      "file": "OdysseyDesign_0.1.0_macOS_x64.dmg",
+      "bytes": 3834253,
+      "sha256": "fc1208e91b55e0712f08386aded95a33f135915d1461c080e6cca74b03cfc263"
     }
   ],
   "channels": {
