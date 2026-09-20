@@ -70,11 +70,11 @@
       "id": "Fs1lyric.OdysseyDesign"
     },
     "scoop": {
-      "available": false,
+      "available": true,
       "bucket": "https://github.com/Fs1lyric/scoop-odyssey"
     },
     "homebrew": {
-      "available": false,
+      "available": true,
       "tap": "fs1lyric/odyssey"
     }
   }

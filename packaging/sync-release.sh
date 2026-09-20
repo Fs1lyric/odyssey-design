@@ -197,10 +197,14 @@ for key in "${KEYS[@]}"; do
 done
 
 export PUBLISHED_MODE="$MODE"
-python3 - "$OUT/site/releases.json" "$VERSION" "$TAG" <<'PY'
+python3 - "$OUT/site/releases.json" "$VERSION" "$TAG" "$ROOT/site/releases.json" <<'PY'
 import json, os, sys
 
 path, version, tag = sys.argv[1], sys.argv[2], sys.argv[3]
+# --check renders into a temp directory, where there is no previous file to
+# carry the channel flags over from. Read them from the real one either way,
+# or a checked run reports drift the moment a channel is marked available.
+previous_path = sys.argv[4] if len(sys.argv) > 4 else path
 
 sums = {}
 for key in ("linux_run", "linux_deb", "win_msi", "win_zip", "mac_arm", "mac_x64"):
@@ -225,7 +229,7 @@ assets = [
 ]
 
 try:
-    with open(path) as fh:
+    with open(previous_path) as fh:
         previous = json.load(fh)
 except (OSError, ValueError):
     previous = {}

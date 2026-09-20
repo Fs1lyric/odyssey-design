@@ -33,7 +33,8 @@
             }
         },
         "hash": {
-            "url": "$url.sha256"
+            "url": "https://github.com/Fs1lyric/odyssey-design/releases/download/v$version/checksums.txt",
+            "regex": "([a-fA-F0-9]{64})\\s+$basename"
         }
     }
 }
