@@ -1,0 +1,39 @@
+{
+    "version": "@VERSION@",
+    "description": "Local-first editor for documents, spreadsheets, decks and video",
+    "homepage": "https://github.com/Fs1lyric/odyssey-design",
+    "license": "MIT",
+    "notes": [
+        "The video editor shells out to ffmpeg. Install it with:",
+        "    scoop install ffmpeg"
+    ],
+    "suggest": {
+        "ffmpeg": "ffmpeg"
+    },
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/Fs1lyric/odyssey-design/releases/download/v@VERSION@/OdysseyDesign_@VERSION@_Windows_x64_portable.zip",
+            "hash": "@SHA_WIN_ZIP@"
+        }
+    },
+    "bin": "odyssey-design.exe",
+    "shortcuts": [
+        [
+            "odyssey-design.exe",
+            "Odyssey Design"
+        ]
+    ],
+    "checkver": {
+        "github": "https://github.com/Fs1lyric/odyssey-design"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Fs1lyric/odyssey-design/releases/download/v$version/OdysseyDesign_$version_Windows_x64_portable.zip"
+            }
+        },
+        "hash": {
+            "url": "$url.sha256"
+        }
+    }
+}

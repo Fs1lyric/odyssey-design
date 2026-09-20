@@ -1,0 +1,3 @@
+Rendered by sync-release.sh once a release carries the artifacts this
+manifest points at. Empty until then; git needs this file to keep the
+directory.

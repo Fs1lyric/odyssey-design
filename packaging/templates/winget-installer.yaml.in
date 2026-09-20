@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: Fs1lyric.OdysseyDesign
+PackageVersion: @VERSION@
+InstallerType: wix
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+ReleaseDate: @DATE@
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/Fs1lyric/odyssey-design/releases/download/v@VERSION@/OdysseyDesign_@VERSION@_Windows_x64.msi
+    InstallerSha256: @SHA_WIN_MSI@
+ManifestType: installer
+ManifestVersion: 1.6.0

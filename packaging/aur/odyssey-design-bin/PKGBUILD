@@ -1,0 +1,54 @@
+# Maintainer: Nabhan Lyric Chowdhury <fs.lyric@proton.me>
+pkgname=odyssey-design-bin
+_pkgname=odyssey-design
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Local-first desktop editor for documents, spreadsheets, decks and video"
+arch=('x86_64')
+url="https://github.com/Fs1lyric/odyssey-design"
+license=('MIT')
+depends=(
+  'webkit2gtk-4.1'
+  'gtk3'
+  'ffmpeg'          # the render engine, and ffprobe for media inspection
+)
+optdepends=(
+  'gst-libav: play H.264 sources directly in the preview; without it, build proxies'
+  'gst-plugins-good: audio output in the preview'
+  'frei0r-plugins: 160+ extra video effects'
+)
+provides=("$_pkgname")
+conflicts=("$_pkgname" "$_pkgname-git")
+
+# The release installer, used as a plain payload archive. --extract unpacks it
+# without running any of the install logic, so nothing in the .run touches the
+# system: makepkg stays in charge of what lands where.
+source=("OdysseyDesign_${pkgver}_Linux.run::${url}/releases/download/v${pkgver}/OdysseyDesign_${pkgver}_Linux.run")
+sha256sums=('2051ed8003f15aea8e28be695e766e1ddd556e7390fc7bcb7e761e4243a62c43')
+noextract=("OdysseyDesign_${pkgver}_Linux.run")
+
+prepare() {
+  cd "$srcdir"
+  chmod +x "OdysseyDesign_${pkgver}_Linux.run"
+  ./"OdysseyDesign_${pkgver}_Linux.run" --extract "$srcdir/unpacked"
+}
+
+package() {
+  local payload="$srcdir/unpacked/payload"
+
+  install -Dm755 "$payload/bin/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+  install -Dm644 "$payload/LICENSE"   "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$payload/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+  for size in 32 128 256 512; do
+    install -Dm644 "$payload/share/icons/${size}x${size}.png" \
+      "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/$_pkgname.png"
+  done
+
+  # The shipped desktop entry is a template the installer fills in. pacman
+  # installs to a fixed prefix, so the substitutions are known here.
+  sed -e "s|@EXEC@|/usr/bin/$_pkgname|" \
+      -e "s|@ICON@|$_pkgname|" \
+      "$payload/share/$_pkgname.desktop.in" \
+    | install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/$_pkgname.desktop"
+}

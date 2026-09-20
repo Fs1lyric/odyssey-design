@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Odyssey Design
+GenericName=Document, spreadsheet, deck and video editor
+Comment=Local-first editor for documents, spreadsheets, decks and video
+Exec=@EXEC@ %F
+Icon=@ICON@
+Terminal=false
+StartupNotify=true
+StartupWMClass=odyssey-design
+# Two main categories on purpose: the app is a video editor and an office
+# suite, and belongs in both menus. desktop-file-validate emits a hint for
+# this; the entry is valid.
+Categories=AudioVideo;AudioVideoEditing;Video;Office;
+Keywords=video;editor;timeline;ffmpeg;spreadsheet;presentation;document;

@@ -1,0 +1,76 @@
+# Maintainer: Nabhan Lyric Chowdhury <fs.lyric@proton.me>
+pkgname=odyssey-design-git
+_pkgname=odyssey-design
+pkgver=r4.a249993
+pkgrel=1
+pkgdesc="Local-first desktop editor for documents, spreadsheets, decks and video"
+arch=('x86_64')
+url="https://github.com/Fs1lyric/odyssey-design"
+license=('MIT')
+depends=(
+  'webkit2gtk-4.1'
+  'gtk3'
+  'ffmpeg'          # the render engine, and ffprobe for media inspection
+)
+optdepends=(
+  'gst-libav: play H.264 sources directly in the preview; without it, build proxies'
+  'gst-plugins-good: audio output in the preview'
+  'frei0r-plugins: 160+ extra video effects'
+)
+makedepends=('git' 'rust' 'nodejs' 'npm' 'pkgconf' 'patchelf' 'librsvg')
+# rusqlite compiles SQLite from source through the cc crate, which picks up
+# makepkg's CFLAGS. With Arch's default LTO that produces an archive of LLVM
+# bitcode, and rust-lld cannot resolve the sqlite3_* symbols out of it.
+options=('!lto')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+source=("$_pkgname::git+https://github.com/Fs1lyric/odyssey-design.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$srcdir/$_pkgname"
+  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+  cd "$srcdir/$_pkgname"
+  npm ci
+}
+
+build() {
+  cd "$srcdir/$_pkgname"
+  # Tauri bundles installers we do not need; the binary is installed directly.
+  npm run tauri build -- --no-bundle
+}
+
+check() {
+  cd "$srcdir/$_pkgname/src-tauri"
+  # Several tests shell out to ffmpeg and render real files.
+  cargo test --release
+}
+
+package() {
+  cd "$srcdir/$_pkgname"
+
+  install -Dm755 "src-tauri/target/release/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+  for size in 32 128; do
+    install -Dm644 "src-tauri/icons/${size}x${size}.png" \
+      "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/$_pkgname.png"
+  done
+
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/$_pkgname.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Odyssey Design
+GenericName=Video and document editor
+Comment=Local-first editor for documents, spreadsheets, decks and video
+Exec=$_pkgname
+Icon=$_pkgname
+Terminal=false
+Categories=AudioVideo;AudioVideoEditing;Video;Office;
+Keywords=video;editor;timeline;ffmpeg;spreadsheet;presentation;
+DESKTOP
+}

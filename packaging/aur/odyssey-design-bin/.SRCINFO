@@ -1,0 +1,21 @@
+pkgbase = odyssey-design-bin
+	pkgdesc = Local-first desktop editor for documents, spreadsheets, decks and video
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/Fs1lyric/odyssey-design
+	arch = x86_64
+	license = MIT
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	depends = ffmpeg
+	optdepends = gst-libav: play H.264 sources directly in the preview; without it, build proxies
+	optdepends = gst-plugins-good: audio output in the preview
+	optdepends = frei0r-plugins: 160+ extra video effects
+	provides = odyssey-design
+	conflicts = odyssey-design
+	conflicts = odyssey-design-git
+	noextract = OdysseyDesign_0.1.0_Linux.run
+	source = OdysseyDesign_0.1.0_Linux.run::https://github.com/Fs1lyric/odyssey-design/releases/download/v0.1.0/OdysseyDesign_0.1.0_Linux.run
+	sha256sums = 2051ed8003f15aea8e28be695e766e1ddd556e7390fc7bcb7e761e4243a62c43
+
+pkgname = odyssey-design-bin
