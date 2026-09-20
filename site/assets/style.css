@@ -1,0 +1,652 @@
+/* Odyssey Design, the site.
+ *
+ * The application is the brand, so the tokens below are lifted from
+ * src/styles.css rather than invented: the same cool neutral ground, the same
+ * single cobalt accent, the same Geist ramp. Two things are added that a
+ * product UI has no use for, and nothing else: a display type scale above
+ * --t-2xl, and a section rhythm.
+ *
+ * Locks (held across every section):
+ *   Accent  - cobalt only. Green and red stay status, never decoration.
+ *   Shape   - 6px on containers, 4px on chips, pill on capsules. Nothing else.
+ *   Theme   - one theme for the whole page. No section inverts.
+ */
+
+@font-face {
+  font-family: "Geist";
+  src: url("../fonts/Geist-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../fonts/GeistMono-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------------- tokens -- */
+
+:root {
+  color-scheme: light dark;
+
+  --bg:          #FAFAFB;
+  --surface:     #FFFFFF;
+  --surface-2:   #F3F4F6;
+  --surface-3:   #E8EAEE;
+
+  --ink:         #15171C;
+  --ink-2:       #5A606C;
+  --ink-3:       #656C7A;
+
+  --line:        #E3E5EA;
+  --line-strong: #C9CDD5;
+
+  --accent:      #2C5FC9;
+  --accent-ink:  #FFFFFF;
+  --accent-weak: #EAF0FC;
+
+  --ok:          #0D7A63;
+  --warn:        #9A6206;
+
+  /* The stage tokens carry the dark figure the screenshots sit on. They are
+     not a second theme: they are one surface that is dark in both modes, the
+     way a monitor bezel is. */
+  --stage:       #0B0D11;
+  --stage-line:  #232830;
+
+  --sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* The product ramp, unchanged. */
+  --t-2xs: 11px;
+  --t-xs:  12px;
+  --t-sm:  13px;
+  --t-md:  15px;
+  --t-lg:  17px;
+  --t-xl:  22px;
+  --t-2xl: 30px;
+
+  /* Display sizes, which the product has no use for. Fluid so the hero
+     headline holds two lines from 360px to 1600px without a media query. */
+  --t-3xl: clamp(28px, 4.2vw, 40px);
+  --t-4xl: clamp(34px, 5.6vw, 58px);
+
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+  --s9: 96px; --s10: 128px;
+
+  --r:      6px;
+  --r-sm:   4px;
+  --r-pill: 999px;
+
+  --page:   1200px;
+  --gutter: clamp(20px, 5vw, 48px);
+  /* Where a .wrap's content begins, as a length the full-bleed hero can use
+     to line up with every section below it. */
+  --edge:   max(var(--gutter), calc((100vw - var(--page)) / 2 + var(--gutter)));
+
+  --shadow: 0 1px 2px rgb(21 23 28 / 0.05), 0 12px 32px rgb(21 23 28 / 0.08);
+  --ease:   cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:          #101216;
+    --surface:     #171A1F;
+    --surface-2:   #1E2229;
+    --surface-3:   #282D36;
+
+    --ink:         #EDEFF3;
+    --ink-2:       #A2AAB8;
+    --ink-3:       #939CAB;
+
+    --line:        #272C34;
+    --line-strong: #626E80;
+
+    --accent:      #6E9BF0;
+    --accent-ink:  #0C1220;
+    --accent-weak: #1B2334;
+
+    --ok:          #46C8A8;
+    --warn:        #D9A441;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px rgb(0 0 0 / 0.45);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg:          #101216;
+  --surface:     #171A1F;
+  --surface-2:   #1E2229;
+  --surface-3:   #282D36;
+
+  --ink:         #EDEFF3;
+  --ink-2:       #A2AAB8;
+  --ink-3:       #939CAB;
+
+  --line:        #272C34;
+  --line-strong: #626E80;
+
+  --accent:      #6E9BF0;
+  --accent-ink:  #0C1220;
+  --accent-weak: #1B2334;
+
+  --ok:          #46C8A8;
+  --warn:        #D9A441;
+
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px rgb(0 0 0 / 0.45);
+}
+
+/* ------------------------------------------------------------------ base -- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--t-md);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img { max-width: 100%; display: block; }
+[hidden] { display: none !important; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.022em; line-height: 1.12; }
+p { margin: 0; }
+
+code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.skip-link {
+  position: absolute; left: var(--s4); top: -60px; z-index: 100;
+  padding: var(--s2) var(--s4);
+  background: var(--accent); color: var(--accent-ink);
+  border-radius: var(--r); text-decoration: none; font-weight: 550;
+  transition: top 0.2s var(--ease);
+}
+.skip-link:focus { top: var(--s4); }
+
+.wrap {
+  width: 100%;
+  max-width: var(--page);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.muted { color: var(--ink-2); }
+
+/* ------------------------------------------------------------------ icon -- */
+
+.ph {
+  font-family: "Phosphor" !important;
+  font-style: normal; font-weight: normal; font-variant: normal;
+  line-height: 1; letter-spacing: 0;
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  display: inline-block;
+  vertical-align: -0.125em;
+}
+
+/* --------------------------------------------------------------- buttons -- */
+
+.btn {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  padding: 11px var(--s5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit; font-weight: 550; font-size: var(--t-md);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.18s var(--ease), border-color 0.18s var(--ease),
+              transform 0.12s var(--ease);
+}
+.btn:hover { background: var(--surface-2); border-color: var(--ink-3); text-decoration: none; }
+.btn:active { transform: translateY(1px); }
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn--primary:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.08); }
+
+.btn--lg { padding: 14px var(--s6); font-size: var(--t-lg); }
+
+/* ------------------------------------------------------------------- nav -- */
+
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  height: 64px;
+  display: flex; align-items: center;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border-bottom: 1px solid var(--line);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .nav { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+.nav__inner {
+  width: 100%; max-width: var(--page); margin-inline: auto;
+  padding-inline: var(--gutter);
+  display: flex; align-items: center; gap: var(--s5);
+}
+
+.nav__brand {
+  display: flex; align-items: center; gap: var(--s2);
+  font-weight: 600; font-size: var(--t-lg); letter-spacing: -0.02em;
+  color: var(--ink); text-decoration: none;
+  margin-right: auto;
+}
+.nav__brand .ph { color: var(--accent); font-size: 20px; }
+.nav__brand span { font-weight: 400; color: var(--ink-2); }
+
+.nav__links { display: flex; align-items: center; gap: var(--s5); }
+.nav__links a {
+  color: var(--ink-2); text-decoration: none; font-size: var(--t-sm); font-weight: 500;
+  transition: color 0.15s var(--ease);
+}
+.nav__links a:hover { color: var(--ink); }
+
+.nav__theme {
+  display: grid; place-items: center;
+  width: 34px; height: 34px; padding: 0;
+  border: 1px solid var(--line); border-radius: var(--r);
+  background: transparent; color: var(--ink-2);
+  cursor: pointer; font-size: 16px;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.nav__theme:hover { background: var(--surface-2); color: var(--ink); }
+
+@media (max-width: 720px) {
+  .nav__links a[data-secondary] { display: none; }
+  .nav__links { gap: var(--s4); }
+}
+
+/* ----------------------------------------------------------------- hero -- */
+/* Offset, not centred: the copy holds a 560px measure on the left and the
+   timeline bleeds past the right edge, so the first thing read is the claim
+   and the first thing seen is the product. */
+
+/* Full width rather than .wrap, so the shot can run off the right edge
+   instead of being clipped by the measure the copy sits in. */
+.hero { padding-top: var(--s9); padding-bottom: var(--s8); overflow: hidden; }
+
+.hero__copy {
+  max-width: 680px;
+  margin-inline-start: var(--edge);
+  padding-inline-end: var(--gutter);
+}
+
+.hero h1 {
+  font-size: var(--t-4xl);
+  letter-spacing: -0.035em;
+  margin-bottom: var(--s5);
+}
+
+.hero__sub {
+  font-size: var(--t-lg);
+  color: var(--ink-2);
+  max-width: 52ch;
+  margin-bottom: var(--s6);
+}
+
+.hero__cta { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
+
+/* Starts on the copy's left edge and runs past the right edge of the
+   viewport. The rounded corners on the left survive, the right side is cut
+   by the window, which is the point: the timeline continues. */
+.hero__shot {
+  margin: var(--s8) 0 0 auto;
+  margin-inline-start: var(--edge);
+  border: 1px solid var(--stage-line);
+  border-right: 0;
+  border-radius: var(--r) 0 0 var(--r);
+  overflow: hidden;
+  background: var(--stage);
+  box-shadow: var(--shadow);
+}
+.hero__shot img { width: 100%; height: auto; }
+
+@media (max-width: 860px) {
+  .hero { padding-top: var(--s7); }
+  .hero__shot { margin-top: var(--s7); }
+}
+
+@media (max-width: 720px) {
+  /* Scaling a 2000px timeline down to a phone makes an unreadable grey
+     smear. Show a legible slice of it instead, framed on the tracks. */
+  .hero__shot { aspect-ratio: 5 / 4; }
+  .hero__shot img {
+    height: 100%;
+    object-fit: cover;
+    object-position: 30% 100%;
+  }
+}
+
+/* -------------------------------------------------------------- sections -- */
+
+.section { padding-block: var(--s9); }
+.section--tight { padding-block: var(--s8); }
+
+.section__head { max-width: 62ch; margin-bottom: var(--s8); }
+.section__head h2 { font-size: var(--t-3xl); margin-bottom: var(--s4); }
+.section__head p { font-size: var(--t-lg); color: var(--ink-2); }
+
+.rule { border: 0; border-top: 1px solid var(--line); margin: 0; }
+
+/* ----------------------------------------------------------------- bento -- */
+/* Four editors, four cells. The video cell is the wide one because the video
+   editor is the part that is hardest to believe without seeing it. */
+
+.bento {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--s4);
+}
+
+.cell {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+
+.cell--wide { grid-column: span 4; }
+.cell--half { grid-column: span 2; }
+.cell--third { grid-column: span 3; }
+
+.cell__body { padding: var(--s5); }
+.cell__body h3 {
+  font-size: var(--t-xl); margin-bottom: var(--s2);
+  display: flex; align-items: center; gap: var(--s2);
+}
+.cell__body h3 .ph { color: var(--accent); font-size: 20px; }
+.cell__body p { color: var(--ink-2); font-size: var(--t-sm); }
+
+.cell__shot {
+  margin-top: auto;
+  background: var(--stage);
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+  aspect-ratio: 16 / 7;
+}
+.cell__shot img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: left top;
+}
+
+/* The one cell carrying a figure rather than a screenshot: it needs its own
+   ground so a text-only tile does not read as an empty tile. */
+.cell--figure { background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 24%, var(--line)); }
+.cell--figure .cell__body { display: flex; flex-direction: column; justify-content: center; height: 100%; }
+.cell__num {
+  font-family: var(--mono); font-size: var(--t-4xl); font-weight: 500;
+  letter-spacing: -0.04em; line-height: 1; color: var(--accent);
+  margin-bottom: var(--s3);
+}
+
+@media (max-width: 900px) {
+  .bento { grid-template-columns: repeat(2, 1fr); }
+  .cell--wide, .cell--half, .cell--third { grid-column: span 2; }
+}
+
+/* --------------------------------------------------------------- clusters -- */
+/* The video editor, grouped into three clusters instead of one long spec
+   table. Three headings, sparse rules, no hairline under every line. */
+
+.clusters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s7) var(--s6);
+}
+
+.cluster h3 {
+  font-size: var(--t-md);
+  padding-bottom: var(--s3);
+  margin-bottom: var(--s4);
+  border-bottom: 1px solid var(--line-strong);
+  display: flex; align-items: center; gap: var(--s2);
+}
+.cluster h3 .ph { color: var(--accent); font-size: 18px; }
+
+.cluster dl { margin: 0; }
+.cluster dt { font-weight: 550; font-size: var(--t-sm); margin-top: var(--s5); }
+.cluster dt:first-child { margin-top: 0; }
+.cluster dd { margin: var(--s1) 0 0; color: var(--ink-2); font-size: var(--t-sm); }
+
+/* ----------------------------------------------------------------- model -- */
+/* Split: prose on the left, the actual schema on the right. A technical
+   audience believes the table definition faster than a paragraph about it. */
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: var(--s8);
+  align-items: center;
+}
+
+@media (max-width: 860px) {
+  .split { grid-template-columns: 1fr; gap: var(--s6); }
+}
+
+.split__prose h2 { font-size: var(--t-3xl); margin-bottom: var(--s4); }
+.split__prose p { color: var(--ink-2); margin-bottom: var(--s4); }
+.split__prose p:last-child { margin-bottom: 0; }
+
+.code {
+  background: var(--stage);
+  border: 1px solid var(--stage-line);
+  border-radius: var(--r);
+  padding: var(--s5);
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: var(--t-sm);
+  line-height: 1.75;
+  color: #C9D3E2;
+  margin: 0;
+}
+.code b { color: #9DC1FF; font-weight: 500; }
+.code i { color: #7F8A9B; font-style: normal; }
+
+/* --------------------------------------------------------------- install -- */
+
+.install {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--s1);
+  padding: var(--s2);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  padding: var(--s2) var(--s4);
+  border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--ink-2);
+  font: inherit; font-size: var(--t-sm); font-weight: 550;
+  white-space: nowrap; cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.tab:hover { color: var(--ink); background: var(--surface-3); }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+
+.panel { padding: var(--s6); }
+.panel__lead { color: var(--ink-2); font-size: var(--t-sm); margin-bottom: var(--s5); max-width: 62ch; }
+
+.cmd {
+  display: flex; align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--stage);
+  overflow: hidden;
+}
+.cmd + .cmd { margin-top: var(--s3); }
+.cmd code {
+  flex: 1; min-width: 0;
+  padding: var(--s4) var(--s5);
+  color: #C9D3E2;
+  font-size: var(--t-sm);
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.5;
+}
+.cmd code::before { content: "$ "; color: #5D6878; }
+.cmd code[data-noprompt]::before { content: ""; }
+
+.cmd__copy {
+  flex: none;
+  display: grid; place-items: center;
+  width: 46px;
+  border: 0; border-left: 1px solid var(--stage-line);
+  background: transparent; color: #8A95A6;
+  cursor: pointer; font-size: 16px;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.cmd__copy:hover { background: #1A1F27; color: #EDEFF3; }
+.cmd__copy[data-copied] { color: var(--ok); }
+
+.note {
+  margin-top: var(--s5);
+  padding: var(--s4);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+.note strong { color: var(--ink); font-weight: 550; }
+
+.status {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px var(--s2);
+  border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+.status--soon {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+}
+
+/* --------------------------------------------------------------- limits -- */
+/* Two columns of plain prose. Saying what the thing does not do is the
+   cheapest trust a tool page can buy, so it gets a real section. */
+
+/* Four limits, two by two. auto-fit would give three columns and leave the
+   fourth alone on a row of its own. */
+.limits {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s6) var(--s8);
+}
+@media (max-width: 720px) { .limits { grid-template-columns: 1fr; } }
+.limit h3 { font-size: var(--t-md); margin-bottom: var(--s2); }
+.limit p { color: var(--ink-2); font-size: var(--t-sm); }
+
+/* --------------------------------------------------------------- footer -- */
+
+.footer {
+  border-top: 1px solid var(--line);
+  padding-block: var(--s7);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+.footer__inner { display: flex; flex-wrap: wrap; gap: var(--s5); align-items: center; }
+.footer__inner a { color: var(--ink-2); text-decoration: none; }
+.footer__inner a:hover { color: var(--ink); text-decoration: underline; }
+.footer__spacer { margin-left: auto; }
+
+@media (max-width: 640px) {
+  .footer__spacer { margin-left: 0; }
+}
+
+/* ------------------------------------------------------------- downloads -- */
+
+/* Four routes, two by two. auto-fit gives three columns here and strands
+   the fourth, and the commands need the width anyway. */
+.dl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s4);
+}
+@media (max-width: 800px) { .dl-grid { grid-template-columns: 1fr; } }
+
+.dl {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  padding: var(--s5);
+  display: flex; flex-direction: column; gap: var(--s3);
+}
+.dl h3 { font-size: var(--t-md); display: flex; align-items: center; gap: var(--s2); }
+.dl h3 .ph { color: var(--accent); font-size: 18px; }
+.dl p { color: var(--ink-2); font-size: var(--t-sm); }
+.dl .btn { align-self: flex-start; margin-top: auto; }
+
+.sums {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+}
+.sums th, .sums td { text-align: left; padding: var(--s3) var(--s4); }
+.sums th { font-family: var(--sans); font-size: var(--t-xs); color: var(--ink-2); font-weight: 550; }
+.sums tbody tr { border-top: 1px solid var(--line); }
+.sums td:last-child { color: var(--ink-2); word-break: break-all; }
+
+.scroller { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+
+/* ---------------------------------------------------------------- reveal -- */
+/* Motion is at 4: things fade up once as they arrive, nothing loops, nothing
+   is pinned. Driven by IntersectionObserver, never a scroll listener. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s var(--ease), transform 0.6s var(--ease);
+  }
+  .reveal.is-in { opacity: 1; transform: none; }
+}

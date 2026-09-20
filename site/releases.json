@@ -1,0 +1,41 @@
+{
+  "_comment": "Written by packaging/sync-release.sh. Editing by hand is fine, but the script will overwrite it on the next release.",
+  "version": "0.1.0",
+  "tag": "v0.1.0",
+  "published": false,
+  "repo": "Fs1lyric/odyssey-design",
+  "assets": [
+    {
+      "platform": "Linux",
+      "arch": "x86_64",
+      "kind": "Self-extracting installer",
+      "file": "OdysseyDesign_0.1.0_Linux.run",
+      "bytes": 3073234,
+      "sha256": "2051ed8003f15aea8e28be695e766e1ddd556e7390fc7bcb7e761e4243a62c43"
+    }
+  ],
+  "channels": {
+    "run": {
+      "available": true
+    },
+    "aur": {
+      "available": false,
+      "packages": [
+        "odyssey-design-bin",
+        "odyssey-design-git"
+      ]
+    },
+    "winget": {
+      "available": false,
+      "id": "Fs1lyric.OdysseyDesign"
+    },
+    "scoop": {
+      "available": false,
+      "bucket": "https://github.com/Fs1lyric/scoop-odyssey"
+    },
+    "homebrew": {
+      "available": false,
+      "tap": "fs1lyric/odyssey"
+    }
+  }
+}

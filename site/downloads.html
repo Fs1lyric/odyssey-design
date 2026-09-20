@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Downloads — Odyssey Design</title>
+  <meta name="description" content="Every Odyssey Design release file, with SHA-256 checksums, and the package manager commands for Arch, winget, Scoop and Homebrew." />
+
+  <meta name="theme-color" content="#FAFAFB" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#101216" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" href="img/favicon-32.png" sizes="32x32" />
+  <link rel="canonical" href="https://fs1lyric.github.io/odyssey-design/downloads.html" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://fs1lyric.github.io/odyssey-design/downloads.html" />
+  <meta property="og:title" content="Downloads — Odyssey Design" />
+  <meta property="og:description" content="Every Odyssey Design release file with SHA-256 checksums, and the one command your package manager needs." />
+  <meta property="og:image" content="https://fs1lyric.github.io/odyssey-design/img/video-dark.webp" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="stylesheet" href="assets/icons.css" />
+  <link rel="stylesheet" href="assets/style.css" />
+
+  <script>
+    try {
+      var t = localStorage.getItem("odyssey-site-theme");
+      if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="nav__inner">
+    <a class="nav__brand" href="./">
+      <i class="ph ph-film-strip" aria-hidden="true"></i>Odyssey&nbsp;<span>Design</span>
+    </a>
+    <nav class="nav__links" aria-label="Sections">
+      <a href="./#editors" data-secondary>Editors</a>
+      <a href="./#video" data-secondary>Video</a>
+      <a href="./#install">Download</a>
+      <a href="https://github.com/Fs1lyric/odyssey-design">GitHub</a>
+      <button class="nav__theme" type="button" id="theme" aria-label="Switch theme">
+        <i class="ph ph-moon" aria-hidden="true"></i>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="section wrap">
+    <div class="section__head">
+      <h2>Downloads</h2>
+      <p>
+        Every file in the current release, and the one command your package
+        manager needs. Version <span data-version>0.1.0</span>.
+      </p>
+    </div>
+
+    <div class="dl-grid">
+      <article class="dl">
+        <h3><i class="ph ph-download-simple" aria-hidden="true"></i>Linux, any distribution</h3>
+        <p>
+          One self-extracting file carrying a prebuilt binary. It verifies its
+          own checksum before it writes anything, and installs either for you
+          alone or for every user on the machine.
+        </p>
+        <a class="btn btn--primary"
+           href="https://github.com/Fs1lyric/odyssey-design/releases/latest">
+          <i class="ph ph-download-simple" aria-hidden="true"></i>Download
+        </a>
+      </article>
+
+      <article class="dl">
+        <h3><i class="ph ph-terminal-window" aria-hidden="true"></i>Arch and derivatives</h3>
+        <p>
+          Two AUR packages. <code>odyssey-design-bin</code> unpacks the released
+          binary and installs in seconds. <code>odyssey-design-git</code> builds
+          the current commit from source.
+        </p>
+        <div class="cmd">
+          <code>yay -S odyssey-design-bin</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+      </article>
+
+      <article class="dl">
+        <h3><i class="ph ph-cube" aria-hidden="true"></i>Windows</h3>
+        <p data-channel="winget">
+          An MSI through winget, or a portable build through Scoop. Both read
+          the same release artifacts.
+        </p>
+        <div class="cmd">
+          <code>winget install Fs1lyric.OdysseyDesign</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+      </article>
+
+      <article class="dl">
+        <h3><i class="ph ph-package" aria-hidden="true"></i>macOS</h3>
+        <p data-channel="homebrew">
+          A cask from the project tap, built for Apple silicon and Intel.
+        </p>
+        <div class="cmd">
+          <code>brew install --cask fs1lyric/odyssey/odyssey-design</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <section class="section section--tight wrap">
+    <div class="section__head">
+      <h2>Checksums</h2>
+      <p>
+        The Linux installer checks itself before it unpacks, so a truncated
+        download fails loudly rather than half-installing. Verify any file
+        yourself with <code>sha256sum</code>.
+      </p>
+    </div>
+
+    <div class="scroller">
+      <table class="sums">
+        <thead>
+          <tr><th>File</th><th>Platform</th><th>Size</th><th>SHA-256</th></tr>
+        </thead>
+        <tbody id="sums">
+          <tr>
+            <td colspan="4" style="font-family:var(--sans);color:var(--ink-2)">
+              Loading. If this does not change, the file list is on the
+              <a href="https://github.com/Fs1lyric/odyssey-design/releases/latest">releases page</a>.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="note" style="max-width:none">
+      <strong>Nothing is code-signed yet.</strong> Windows SmartScreen and macOS
+      Gatekeeper will both warn about an unidentified developer, and that
+      warning is correct: verify the checksum above against the file you
+      downloaded before you run it.
+    </p>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer__inner">
+    <span>Odyssey Design, MIT licensed.</span>
+    <a href="https://github.com/Fs1lyric/odyssey-design">Source</a>
+    <a href="./">Home</a>
+    <a href="https://github.com/Fs1lyric/odyssey-design/issues">Issues</a>
+    <span class="footer__spacer">Built by Nabhan Lyric Chowdhury.</span>
+  </div>
+</footer>
+
+<script src="assets/site.js" defer></script>
+<script src="assets/downloads.js" defer></script>
+</body>
+</html>

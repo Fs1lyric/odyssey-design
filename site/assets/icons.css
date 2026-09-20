@@ -1,0 +1,72 @@
+/* Phosphor Icons, subset. Only the glyphs this site uses.
+ * Upstream: @phosphor-icons/web (MIT). The font file is the full face;
+ * this sheet carries the codepoint mappings for these names only. */
+
+@font-face {
+  font-family: "Phosphor";
+  src: url("../fonts/Phosphor.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.ph.ph-film-strip:before {
+  content: "\e792";
+}
+.ph.ph-file-text:before {
+  content: "\e23a";
+}
+.ph.ph-table:before {
+  content: "\e476";
+}
+.ph.ph-presentation-chart:before {
+  content: "\e656";
+}
+.ph.ph-download-simple:before {
+  content: "\e20c";
+}
+.ph.ph-github-logo:before {
+  content: "\e576";
+}
+.ph.ph-sun:before {
+  content: "\e472";
+}
+.ph.ph-moon:before {
+  content: "\e330";
+}
+.ph.ph-copy:before {
+  content: "\e1ca";
+}
+.ph.ph-check:before {
+  content: "\e182";
+}
+.ph.ph-hard-drives:before {
+  content: "\e2a0";
+}
+.ph.ph-terminal-window:before {
+  content: "\eae8";
+}
+.ph.ph-sliders:before {
+  content: "\e432";
+}
+.ph.ph-waveform:before {
+  content: "\e802";
+}
+.ph.ph-package:before {
+  content: "\e390";
+}
+.ph.ph-cube:before {
+  content: "\e1da";
+}
+.ph.ph-database:before {
+  content: "\e1de";
+}
+.ph.ph-shield-check:before {
+  content: "\e40c";
+}
+.ph.ph-arrow-right:before {
+  content: "\e06c";
+}
+.ph.ph-house:before {
+  content: "\e2c2";
+}

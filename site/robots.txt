@@ -1,0 +1,5 @@
+# Everything here is public and worth indexing.
+User-agent: *
+Allow: /
+
+Sitemap: https://fs1lyric.github.io/odyssey-design/sitemap.xml
