@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Odyssey Design</title>
+  <meta name="description" content="A local-first desktop app for documents, spreadsheets, decks and video. Everything is stored on your machine in SQLite. No account, no server, no sync." />
+
+  <meta name="theme-color" content="#FAFAFB" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#101216" media="(prefers-color-scheme: dark)" />
+
+  <link rel="icon" href="img/favicon-32.png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="img/icon.png" />
+
+  <link rel="canonical" href="https://fs1lyric.github.io/odyssey-design/" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://fs1lyric.github.io/odyssey-design/" />
+  <meta property="og:title" content="Odyssey Design" />
+  <meta property="og:description" content="Four editors. One database. No account. Documents, spreadsheets, decks and a real ffmpeg video timeline, on your own machine." />
+  <meta property="og:image" content="https://fs1lyric.github.io/odyssey-design/img/video-dark.webp" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="assets/icons.css" />
+  <link rel="stylesheet" href="assets/style.css" />
+
+  <script>
+    /* Applied before first paint so an explicit choice never flashes the
+       other theme. The default is the system setting, which means no
+       attribute at all. */
+    try {
+      var t = localStorage.getItem("odyssey-site-theme");
+      if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="nav__inner">
+    <a class="nav__brand" href="./">
+      <i class="ph ph-film-strip" aria-hidden="true"></i>Odyssey&nbsp;<span>Design</span>
+    </a>
+    <nav class="nav__links" aria-label="Sections">
+      <a href="#editors" data-secondary>Editors</a>
+      <a href="#video" data-secondary>Video</a>
+      <a href="#install">Download</a>
+      <a href="https://github.com/Fs1lyric/odyssey-design">GitHub</a>
+      <button class="nav__theme" type="button" id="theme" aria-label="Switch theme">
+        <i class="ph ph-moon" aria-hidden="true"></i>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- Hero. Offset rather than centred: the claim holds a 620px measure on
+       the left, the timeline bleeds past the right edge. -->
+  <section class="hero">
+    <div class="hero__copy">
+      <h1>Four editors. One database. No account.</h1>
+      <p class="hero__sub">
+        Documents, spreadsheets, decks and a real ffmpeg video timeline, in one
+        desktop app that stores everything on your machine.
+      </p>
+      <div class="hero__cta">
+        <a class="btn btn--primary btn--lg" href="#install">
+          <i class="ph ph-download-simple" aria-hidden="true"></i>Download
+        </a>
+        <a class="btn btn--lg" href="https://github.com/Fs1lyric/odyssey-design">
+          <i class="ph ph-github-logo" aria-hidden="true"></i>View on GitHub
+        </a>
+      </div>
+    </div>
+
+    <figure class="hero__shot">
+      <img src="img/video-dark.webp" width="2000" height="625" fetchpriority="high"
+           alt="The Odyssey Design video editor: a two-track timeline with three clips, a clip inspector on the right and the preview monitor above." />
+    </figure>
+  </section>
+
+  <hr class="rule" />
+
+  <!-- Four editors, four cells. -->
+  <section class="section wrap" id="editors">
+    <div class="section__head reveal">
+      <h2>One record model, seen four ways</h2>
+      <p>
+        A document, a spreadsheet, a deck and a video timeline are the same
+        shape of thing from different angles. Adding a module means adding a
+        kind, not a new table.
+      </p>
+    </div>
+
+    <div class="bento">
+      <article class="cell cell--half cell--figure reveal">
+        <div class="cell__body">
+          <div class="cell__num">135</div>
+          <h3>Video</h3>
+          <p>
+            Native effects, plus every frei0r plugin installed on your machine.
+            Keyframes on every numeric parameter, with 28 interpolation curves.
+          </p>
+          <p style="margin-top:var(--s4)">
+            <a href="#video">How the renderer works <i class="ph ph-arrow-right" aria-hidden="true"></i></a>
+          </p>
+        </div>
+      </article>
+
+      <article class="cell cell--wide reveal">
+        <div class="cell__body">
+          <h3><i class="ph ph-file-text" aria-hidden="true"></i>Documents</h3>
+          <p>
+            Rich text with a formatting toolbar, plain-text paste, and live word,
+            character and reading-time counts.
+          </p>
+        </div>
+        <div class="cell__shot">
+          <img src="img/cell-doc.webp" width="1000" height="438" loading="lazy"
+               alt="A script open in the document editor, with a formatting toolbar and a live word count." />
+        </div>
+      </article>
+
+      <article class="cell cell--third reveal">
+        <div class="cell__body">
+          <h3><i class="ph ph-table" aria-hidden="true"></i>Spreadsheets</h3>
+          <p>
+            A 26 by 60 grid over a formula engine written in Rust. Twenty
+            functions, real cell references and ranges, and cycles reported as
+            a value instead of a hang.
+          </p>
+        </div>
+        <div class="cell__shot">
+          <img src="img/cell-sheet.webp" width="1000" height="438" loading="lazy"
+               alt="A shoot budget in the spreadsheet editor, with a formula bar and a computed subtotal." />
+        </div>
+      </article>
+
+      <article class="cell cell--third reveal">
+        <div class="cell__body">
+          <h3><i class="ph ph-presentation-chart" aria-hidden="true"></i>Decks</h3>
+          <p>
+            Filmstrip editing and a presenter mode with its own dark token set,
+            so a deck never inherits the theme of the page behind it.
+          </p>
+        </div>
+        <div class="cell__shot">
+          <img src="img/cell-slide.webp" width="1000" height="438" loading="lazy"
+               alt="A four-slide deck in the slide editor, with the filmstrip on the left and the current slide on the stage." />
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <!-- The video editor, grouped into three clusters rather than one long
+       spec table. -->
+  <section class="section wrap" id="video">
+    <div class="section__head reveal">
+      <h2>The video editor is not a demo</h2>
+      <p>
+        A multi-track non-linear editor written from scratch against ffmpeg.
+        Every render is an argument vector you can print and read.
+      </p>
+    </div>
+
+    <div class="clusters reveal">
+      <section class="cluster">
+        <h3><i class="ph ph-film-strip" aria-hidden="true"></i>Timeline</h3>
+        <dl>
+          <dt>Any number of video and audio tracks</dt>
+          <dd>Clips sit at absolute positions, so a gap is a real gap. Drag to move in time or between tracks, drag an edge to trim.</dd>
+          <dt>Live canvas compositor</dt>
+          <dd>Every active clip on every visible track, in track order, with opacity and fades applied. Zoom runs from 4 to 400 pixels per second.</dd>
+          <dt>Proxy editing</dt>
+          <dd>Low-resolution stand-ins keep 4K scrubbing responsive. The preview may use a proxy. The renderer never does, and a test enforces it.</dd>
+        </dl>
+      </section>
+
+      <section class="cluster">
+        <h3><i class="ph ph-sliders" aria-hidden="true"></i>Effects</h3>
+        <dl>
+          <dt>135 native, plus frei0r</dt>
+          <dd>Colour, image, stylise, geometry, keying, repair and audio groups &mdash; 90 visual and 45 audio &mdash; alongside the plugin library Kdenlive draws on.</dd>
+          <dt>30 transitions, 42 blend modes</dt>
+          <dd>Every transition is rendered by the same graph as the clips it joins, and every blend mode the compositor previews is the one the export writes.</dd>
+          <dt>Keyframes with 28 curves</dt>
+          <dd>Linear and hold, the ease family, and sine, cubic, quart, quint, expo, circ, back, elastic and bounce, set at the playhead on any numeric parameter.</dd>
+          <dt>Three routes to ffmpeg</dt>
+          <dd>Per-frame expressions where the filter takes one, timed commands at 20 Hz where it does not, gated instances where neither works. Each effect card says which route it used.</dd>
+        </dl>
+      </section>
+
+      <section class="cluster">
+        <h3><i class="ph ph-package" aria-hidden="true"></i>Export</h3>
+        <dl>
+          <dt>Six profiles</dt>
+          <dd>H.264 at quality and draft, H.265, VP9 in WebM, ProRes 422, and audio-only MP3.</dd>
+          <dt>Subtitles three ways</dt>
+          <dd>Left out, burned into the picture, or carried as a selectable track. Burned cues are drawn after compositing, so they sit above every track.</dd>
+          <dt>Speed as a curve</dt>
+          <dd>Keyframe it and the clip ramps. Audio follows video through the ramp, including rates past the range a single atempo filter can reach.</dd>
+        </dl>
+      </section>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <!-- Local-first, argued with the schema rather than with adjectives. -->
+  <section class="section wrap">
+    <div class="split">
+      <div class="split__prose reveal">
+        <h2>It runs on your machine and stays there</h2>
+        <p>
+          There is no account to make and no server to reach. Every item lives
+          in one SQLite file in your user data directory, which you can copy,
+          back up, or open with any other tool that reads SQLite.
+        </p>
+        <p>
+          Installing, upgrading and removing the application never touch that
+          file. The uninstaller records every path it created and removes
+          exactly those.
+        </p>
+      </div>
+
+      <pre class="code reveal"><code><b>items</b>     id, kind, title, body, data(JSON),
+          due, project, timestamps
+<b>links</b>     src -&gt; dst, rel
+          <i>embeds and backlinks, both directions</i>
+<b>sessions</b>  item_id, start, end
+          <i>editing sessions, the basis for history</i></code></pre>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <!-- Install. The tab panel is the page's reason to exist. -->
+  <section class="section wrap" id="install">
+    <div class="section__head reveal">
+      <h2>Install it</h2>
+      <p>
+        One self-contained file on Linux, or your own package manager. Nothing
+        to compile and no Rust or Node needed to install.
+      </p>
+    </div>
+
+    <div class="install reveal">
+      <div class="tabs" role="tablist" aria-label="Install method">
+        <button class="tab" role="tab" id="tab-linux" aria-controls="p-linux" aria-selected="true">
+          <i class="ph ph-download-simple" aria-hidden="true"></i>Linux installer
+        </button>
+        <button class="tab" role="tab" id="tab-arch" aria-controls="p-arch" aria-selected="false">
+          <i class="ph ph-terminal-window" aria-hidden="true"></i>Arch
+        </button>
+        <button class="tab" role="tab" id="tab-windows" aria-controls="p-windows" aria-selected="false">
+          <i class="ph ph-cube" aria-hidden="true"></i>Windows
+        </button>
+        <button class="tab" role="tab" id="tab-macos" aria-controls="p-macos" aria-selected="false">
+          <i class="ph ph-package" aria-hidden="true"></i>macOS
+        </button>
+        <button class="tab" role="tab" id="tab-source" aria-controls="p-source" aria-selected="false">
+          <i class="ph ph-github-logo" aria-hidden="true"></i>Source
+        </button>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-linux" aria-labelledby="tab-linux">
+        <p class="panel__lead">
+          A single <code>.run</code> file carrying a prebuilt binary. It verifies
+          its own checksum, opens a wizard, checks for the libraries it needs and
+          offers to fetch any that are missing through your own package manager.
+        </p>
+        <div class="cmd">
+          <code>chmod +x OdysseyDesign_0.1.0_Linux.run</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <div class="cmd">
+          <code>./OdysseyDesign_0.1.0_Linux.run</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <p class="note">
+          <strong>Installing just for you</strong> goes to
+          <code>~/.local/opt/odyssey-design</code> and needs no password.
+          <strong>All users</strong> goes to <code>/opt/odyssey-design</code> and
+          asks for one. On a machine with no desktop session,
+          <code>--text</code> runs the same wizard in the terminal.
+        </p>
+        <p style="margin-top:var(--s5)">
+          <a class="btn btn--primary" href="https://github.com/Fs1lyric/odyssey-design/releases/latest">
+            <i class="ph ph-download-simple" aria-hidden="true"></i>Download
+          </a>
+        </p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-arch" aria-labelledby="tab-arch" hidden>
+        <p class="panel__lead">
+          Two AUR packages. <code>odyssey-design-bin</code> unpacks the released
+          binary. <code>odyssey-design-git</code> builds from the current commit
+          and needs Rust and Node.
+        </p>
+        <div class="cmd">
+          <code>yay -S odyssey-design-bin</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <div class="cmd">
+          <code>paru -S odyssey-design-git</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <p class="note">
+          ffmpeg is a hard dependency and carries the renderer. Install
+          <code>frei0r-plugins</code> as well for the extra effect library, and
+          <code>gst-libav</code> to play H.264 sources directly in the preview.
+        </p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-windows" aria-labelledby="tab-windows" hidden>
+        <p class="panel__lead">
+          Through winget or Scoop, both reading the same signed release artifacts.
+        </p>
+        <div class="cmd">
+          <code>winget install Fs1lyric.OdysseyDesign</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <div class="cmd">
+          <code>scoop bucket add odyssey https://github.com/Fs1lyric/scoop-odyssey</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <div class="cmd">
+          <code>scoop install odyssey-design</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <p class="note" data-platform-note="windows">
+          <span class="status status--soon">Not published yet</span>
+          The manifests are in the repository and the release workflow builds the
+          Windows artifacts, but nothing has been submitted to winget or Scoop
+          yet. Until it is, these commands will not resolve.
+        </p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-macos" aria-labelledby="tab-macos" hidden>
+        <p class="panel__lead">
+          A Homebrew cask from the project tap, for Apple silicon and Intel.
+        </p>
+        <div class="cmd">
+          <code>brew tap fs1lyric/odyssey</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <div class="cmd">
+          <code>brew install --cask odyssey-design</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <p class="note" data-platform-note="macos">
+          <span class="status status--soon">Not published yet</span>
+          The cask is in the repository and the release workflow builds the
+          disk images, but the tap has not been published yet. Until it is,
+          these commands will not resolve.
+        </p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-source" aria-labelledby="tab-source" hidden>
+        <p class="panel__lead">
+          Requires Rust, Node, webkit2gtk and GTK 3. The video editor also needs
+          ffmpeg and ffprobe on your path.
+        </p>
+        <div class="cmd">
+          <code>git clone https://github.com/Fs1lyric/odyssey-design</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <div class="cmd">
+          <code>npm install &amp;&amp; npm run tauri dev</code>
+          <button class="cmd__copy" type="button" aria-label="Copy command"><i class="ph ph-copy" aria-hidden="true"></i></button>
+        </div>
+        <p class="note">
+          The Rust suite includes end-to-end tests that generate real media with
+          ffmpeg, render actual projects and probe the results. Run them with
+          <code>cargo test</code> inside <code>src-tauri</code>.
+        </p>
+      </div>
+    </div>
+
+    <p style="margin-top:var(--s5)" class="muted">
+      Every file, with checksums, is on the <a href="downloads.html">downloads page</a>.
+    </p>
+  </section>
+
+  <hr class="rule" />
+
+  <!-- What it does not do. Cheapest trust a tool page can buy. -->
+  <section class="section section--tight wrap">
+    <div class="section__head reveal">
+      <h2>What it does not do yet</h2>
+      <p>
+        This is a working first version of the editors, not a finished product.
+        The limits below are real and worth knowing before you install.
+      </p>
+    </div>
+
+    <div class="limits reveal">
+      <div class="limit">
+        <h3>No collaboration</h3>
+        <p>
+          No accounts, no sharing, no presence and no sync. That is the design,
+          not a gap waiting to be filled.
+        </p>
+      </div>
+      <div class="limit">
+        <h3>The preview approximates</h3>
+        <p>
+          The canvas compositor draws what it can. Chroma key, vignette, crop,
+          rotate and frei0r appear only in the export. ffmpeg is always the
+          authority on the final output.
+        </p>
+      </div>
+      <div class="limit">
+        <h3>One animated filter of a kind per clip</h3>
+        <p>
+          Timed commands target a filter by name, so two animated effects of the
+          same kind on one clip receive each other's commands.
+        </p>
+      </div>
+      <div class="limit">
+        <h3>Linux is the tested platform</h3>
+        <p>
+          The application builds against webkit2gtk and GTK 3, and that is where
+          the test suite runs. Windows and macOS builds exist in the release
+          workflow but have not been through the same use.
+        </p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer__inner">
+    <span>Odyssey Design, MIT licensed.</span>
+    <a href="https://github.com/Fs1lyric/odyssey-design">Source</a>
+    <a href="downloads.html">Downloads</a>
+    <a href="https://github.com/Fs1lyric/odyssey-design/issues">Issues</a>
+    <span class="footer__spacer">Built by Nabhan Lyric Chowdhury.</span>
+  </div>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

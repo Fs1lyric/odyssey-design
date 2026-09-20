@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Page not found — Odyssey Design</title>
+  <meta name="description" content="That page does not exist. The Odyssey Design home page and downloads are one link away." />
+  <meta name="robots" content="noindex" />
+
+  <meta name="theme-color" content="#FAFAFB" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#101216" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" href="/odyssey-design/img/favicon-32.png" sizes="32x32" />
+
+  <link rel="stylesheet" href="/odyssey-design/assets/icons.css" />
+  <link rel="stylesheet" href="/odyssey-design/assets/style.css" />
+
+  <script>
+    try {
+      var t = localStorage.getItem("odyssey-site-theme");
+      if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="nav__inner">
+    <a class="nav__brand" href="/odyssey-design/">
+      <i class="ph ph-film-strip" aria-hidden="true"></i>Odyssey&nbsp;<span>Design</span>
+    </a>
+    <nav class="nav__links" aria-label="Sections">
+      <a href="/odyssey-design/#editors" data-secondary>Editors</a>
+      <a href="/odyssey-design/#video" data-secondary>Video</a>
+      <a href="/odyssey-design/#install">Download</a>
+      <a href="https://github.com/Fs1lyric/odyssey-design">GitHub</a>
+      <button class="nav__theme" type="button" id="theme" aria-label="Switch theme">
+        <i class="ph ph-moon" aria-hidden="true"></i>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <!-- Absolute paths throughout: GitHub Pages serves this file for any depth
+       of unknown URL, so relative ones would resolve against the wrong base. -->
+  <section class="section wrap">
+    <div class="section__head">
+      <h2>That page does not exist</h2>
+      <p>
+        The link may be out of date, or the address mistyped. Everything the
+        site has is on the home page and the downloads page.
+      </p>
+    </div>
+
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href="/odyssey-design/">
+        <i class="ph ph-house" aria-hidden="true"></i>Home
+      </a>
+      <a class="btn btn--lg" href="/odyssey-design/downloads.html">
+        <i class="ph ph-download-simple" aria-hidden="true"></i>Downloads
+      </a>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer__inner">
+    <span>Odyssey Design, MIT licensed.</span>
+    <a href="https://github.com/Fs1lyric/odyssey-design">Source</a>
+    <a href="/odyssey-design/">Home</a>
+    <a href="https://github.com/Fs1lyric/odyssey-design/issues">Issues</a>
+    <span class="footer__spacer">Built by Nabhan Lyric Chowdhury.</span>
+  </div>
+</footer>
+
+<script src="/odyssey-design/assets/site.js" defer></script>
+</body>
+</html>

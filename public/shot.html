@@ -1,0 +1,108 @@
+<!doctype html><html><head><meta charset="utf-8"><title>WAIT</title>
+<style>html,body{margin:0;padding:0;overflow:hidden;background:#fff}iframe{border:0;display:block}</style>
+</head><body><script type="module">
+const p = new URLSearchParams(location.search);
+const view = p.get('view') || 'doc';
+localStorage.setItem('odyssey-theme', p.get('theme') || 'light');
+
+const now = '2026-09-18T10:12:00Z';
+const mk = (id, kind, title, data, body) => ({
+  id, kind, title, body: body || '', status: 'open', project: null, due: null,
+  ends_at: null, recurrence: null, url: null, pinned: false, data,
+  created_at: now, updated_at: now, tags: []
+});
+
+const docHtml = `
+<h2>Cold open</h2>
+<p>Open on the tide line at first light. No voice over for the first forty seconds; let the water carry it. The cut to the boat yard should land on the third wave, not the second.</p>
+<p>We lose the drone shot. It reads as stock footage and it fights the intimacy of everything around it.</p>
+<h2>Interview block</h2>
+<p>Rahima speaks for roughly nine minutes. Usable section starts where she describes repairing the hull, around 04:12 in the card A file.</p>
+<p>Keep her hands in frame. The gesture does more work than the line about the storm.</p>`;
+
+const cells = {
+  A1:'Item', B1:'Days', C1:'Rate', D1:'Total',
+  A2:'Camera package', B2:'6', C2:'240', D2:'1440',
+  A3:'Sound recordist', B3:'4', C3:'310', D3:'1240',
+  A4:'Boat hire', B4:'3', C4:'95', D4:'285',
+  A5:'Colour grade', B5:'2', C5:'480', D5:'960',
+  A7:'Subtotal', D7:'3925'
+};
+
+const slides = [
+  { title:'Colour pipeline', body:'How a frame gets from the card to the cut' },
+  { title:'Why we log', body:'Log holds the highlights that Rec.709 throws away.' },
+  { title:'One LUT, applied late', body:'Grade on the timeline, never on the source.' },
+  { title:'Export targets', body:'ProRes for the archive. H.264 for the review link.' }
+];
+
+const ITEMS = [
+  mk('d1','doc','Ep. 14 script, cold open',{ html: docHtml }),
+  mk('s1','sheet','Shoot budget, tide series',{ cells }),
+  mk('p1','slide','Colour pipeline, internal talk',{ slides })
+];
+const TITLES = { doc:'Ep. 14 script', sheet:'Shoot budget', slide:'Colour pipeline' };
+
+localStorage.setItem('odyssey-dev-items', JSON.stringify(ITEMS));
+
+// The video project is built with the app's own factories rather than
+// hand-written JSON, so the seeded edit is always schema-valid.
+if (view === 'video') {
+  const tl = await import('/src/timeline.ts');
+  const proj = tl.emptyProject();
+  const v1 = proj.tracks[0];
+
+  const card = tl.makeClip(
+    { type: 'title', text: 'Tide series', background: 'black', size: 96,
+      color: '#FFFFFF', style: tl.defaultTitleStyle() }, 0, 4);
+  card.name = 'Card 01';
+
+  const plate = tl.makeClip({ type: 'color', color: '#1B3A6B' }, 4, 5);
+  plate.name = 'Grade plate';
+  plate.transition_in = { kind: 'dissolve', duration: 0.6, curve: 'qsin' };
+  const colourFx = tl.EFFECT_CATALOGUE.find(e => /colour|color/i.test(e.label));
+  if (colourFx) plate.effects.push(colourFx.make());
+
+  const bars = tl.makeClip({ type: 'bars' }, 9, 4);
+  bars.name = 'Bars';
+  bars.transition_in = { kind: 'wipeleft', duration: 0.5, curve: 'qsin' };
+
+  v1.clips.push(card, plate, bars);
+  ITEMS.unshift(mk('v1', 'video', 'Tide series, rough cut', proj));
+  TITLES.video = 'Tide series';
+  localStorage.setItem('odyssey-dev-items', JSON.stringify(ITEMS));
+}
+
+const f = document.createElement('iframe');
+f.width = p.get('w') || 1600;
+f.height = p.get('h') || 1000;
+f.src = '/';
+f.onload = () => setTimeout(() => {
+  const d = f.contentDocument;
+  try {
+    [...d.querySelectorAll('.doc-row')].find(r => r.textContent.includes(TITLES[view]))?.click();
+    setTimeout(() => {
+      if (view === 'video') {
+        const clip = d.querySelectorAll('.vid__clip')[1];
+        if (clip) {
+          const r = clip.getBoundingClientRect();
+          for (const type of ['pointerdown', 'pointerup']) {
+            clip.dispatchEvent(new PointerEvent(type, {
+              bubbles: true, cancelable: true, isPrimary: true, button: 0,
+              clientX: r.left + r.width / 2, clientY: r.top + r.height / 2
+            }));
+          }
+        }
+      }
+      if (view === 'video' && p.get('panel') === 'export') {
+        const btn = [...d.querySelectorAll('button')].find(b => b.textContent.trim() === 'Export');
+        btn?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, isPrimary: true, button: 0 }));
+        btn?.click();
+      }
+      d.activeElement?.blur();
+    }, 300);
+  } catch (e) { document.title = 'ERR ' + e.message; return; }
+  setTimeout(() => { document.title = 'READY'; }, 600);
+}, 500);
+document.body.append(f);
+</script></body></html>
