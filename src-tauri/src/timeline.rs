@@ -5128,8 +5128,40 @@ pub fn flatten_nested(project: &Project, cache_dir: &Path) -> Result<Project> {
 /// and handed over with -filter_complex_script instead.
 const MAX_INLINE_GRAPH: usize = 60_000;
 
-/// Swap an oversized -filter_complex for -filter_complex_script backed by a
-/// file. Returns the rewritten arguments and the file to clean up afterwards.
+/// Which option hands a filter graph over as a file.
+///
+/// ffmpeg 7.0 replaced `-filter_complex_script FILE` with the general
+/// `-/optname FILE` read-this-option-from-a-file syntax and removed the old
+/// spelling outright, so neither spelling works on both sides of that break.
+/// Distributions sit on either side of it for years at a time — Ubuntu 24.04
+/// ships 6.1, where `-/filter_complex` is an unrecognised option — so the
+/// binary is asked what it accepts rather than having a version string parsed
+/// out of it. One subprocess, once, since the answer cannot change under us.
+fn graph_file_option() -> &'static str {
+    use std::sync::OnceLock;
+    static OPTION: OnceLock<&'static str> = OnceLock::new();
+
+    OPTION.get_or_init(|| {
+        let listed = Command::new("ffmpeg")
+            .args(["-hide_banner", "-h", "full"])
+            .output()
+            .map(|o| {
+                let mut text = String::from_utf8_lossy(&o.stdout).into_owned();
+                text.push_str(&String::from_utf8_lossy(&o.stderr));
+                text.contains("filter_complex_script")
+            })
+            .unwrap_or(false);
+
+        if listed {
+            "-filter_complex_script"
+        } else {
+            "-/filter_complex"
+        }
+    })
+}
+
+/// Swap an oversized -filter_complex for a file-backed graph. Returns the
+/// rewritten arguments and the file to clean up afterwards.
 fn spill_graph(mut args: Vec<String>) -> Result<(Vec<String>, Option<PathBuf>)> {
     let Some(i) = args.iter().position(|a| a == "-filter_complex") else {
         return Ok((args, None));
@@ -5142,9 +5174,7 @@ fn spill_graph(mut args: Vec<String>) -> Result<(Vec<String>, Option<PathBuf>)> 
     let path = std::env::temp_dir().join(format!("odyssey-graph-{}.txt", uuid::Uuid::new_v4()));
     std::fs::write(&path, &graph)?;
 
-    // `-/optname file` is ffmpeg's read-this-option-from-a-file syntax. The
-    // older -filter_complex_script was removed in ffmpeg 7.
-    args[i] = "-/filter_complex".into();
+    args[i] = graph_file_option().into();
     args[i + 1] = path.to_string_lossy().to_string();
     Ok((args, Some(path)))
 }
