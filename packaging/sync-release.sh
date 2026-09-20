@@ -62,6 +62,7 @@ fi
 # while a release is still building.
 
 declare -A SUM
+declare -A SIZE
 
 asset_name() {
   case "$1" in
@@ -85,6 +86,15 @@ if [ "$MODE" = "local" ]; then
 else
   command -v gh >/dev/null 2>&1 || die "gh is required to read a release (or pass --local)"
   say "Reading checksums from the $TAG release"
+
+  # The assets are never downloaded here, only their checksums, so the sizes
+  # the downloads table prints have to come from the release itself.
+  while read -r name bytes; do
+    for key in "${KEYS[@]}"; do
+      [ "$name" = "$(asset_name "$key")" ] && SIZE[$key]="$bytes"
+    done
+  done < <(gh release view "$TAG" --repo "$REPO" \
+             --json assets -q '.assets[] | "\(.name) \(.size)"' 2>/dev/null)
 
   WORK="$(mktemp -d)"
   trap 'rm -rf "$WORK"' EXIT
@@ -176,8 +186,8 @@ fi
 for key in "${KEYS[@]}"; do
   upper="$(echo "$key" | tr '[:lower:]' '[:upper:]')"
   export "SUM_$upper=${SUM[$key]:-}"
-  size=""
-  if [ -n "${SUM[$key]:-}" ]; then
+  size="${SIZE[$key]:-}"
+  if [ -z "$size" ] && [ -n "${SUM[$key]:-}" ]; then
     local_file="$HERE/dist/$(asset_name "$key")"
     [ -f "$local_file" ] && size="$(stat -c%s "$local_file")"
     [ -z "$size" ] && [ -f "${WORK:-/nonexistent}/$(asset_name "$key")" ] &&
@@ -209,7 +219,7 @@ shape = [
 
 assets = [
     {"platform": p, "arch": a, "kind": k, "file": f,
-     "bytes": int(os.environ.get("BYTES_" + key.upper(), 0)) or None,
+     "bytes": int(os.environ.get("BYTES_" + key.upper()) or 0) or None,
      "sha256": sums[key]}
     for key, p, a, k, f in shape if key in sums
 ]

@@ -16,6 +16,6 @@ pkgbase = odyssey-design-bin
 	conflicts = odyssey-design-git
 	noextract = OdysseyDesign_0.1.0_Linux.run
 	source = OdysseyDesign_0.1.0_Linux.run::https://github.com/Fs1lyric/odyssey-design/releases/download/v0.1.0/OdysseyDesign_0.1.0_Linux.run
-	sha256sums = 2051ed8003f15aea8e28be695e766e1ddd556e7390fc7bcb7e761e4243a62c43
+	sha256sums = 86091041410d24d60b6ed8feb62876fee7696f01a09070f72f1c4a6d98083e92
 
 pkgname = odyssey-design-bin
