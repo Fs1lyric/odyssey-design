@@ -1,0 +1,192 @@
+name: Release
+
+# Tagging v* builds every artifact the package manifests point at, on the
+# platform that can actually produce it, and publishes them as one release.
+# Nothing here signs anything: the manifests carry SHA-256 checksums instead,
+# and the downloads page says plainly that the binaries are unsigned.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (for a dry run; no release is published)"
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ---------------------------------------------------------------- linux --
+  linux:
+    name: Linux installer
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev patchelf xz-utils
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Builds the release binary and wraps it in the self-extracting .run.
+      - name: Build the installer
+        run: ./packaging/build-installer.sh
+
+      - name: Name the artifact
+        id: name
+        run: |
+          version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+            src-tauri/tauri.conf.json | head -1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          mkdir -p out
+          cp "packaging/dist/OdysseyDesign_${version}_Linux.run" out/
+
+      # The .deb is worth having for Debian and Ubuntu users who would rather
+      # let apt track the application than run an installer.
+      - name: Build the deb
+        run: |
+          npm run tauri build -- --bundles deb
+          version="${{ steps.name.outputs.version }}"
+          find src-tauri/target/release/bundle/deb -name '*.deb' -exec \
+            cp {} "out/OdysseyDesign_${version}_amd64.deb" \;
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: out/
+          if-no-files-found: error
+
+  # -------------------------------------------------------------- windows --
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the MSI
+        run: npm run tauri build -- --bundles msi
+
+      - name: Collect the artifacts
+        shell: pwsh
+        run: |
+          $conf = Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json
+          $version = $conf.version
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+
+          $msi = Get-ChildItem -Recurse -Filter *.msi `
+            src-tauri/target/release/bundle/msi | Select-Object -First 1
+          Copy-Item $msi.FullName "out/OdysseyDesign_${version}_Windows_x64.msi"
+
+          # Scoop prefers a plain archive it can unpack and shim, with no
+          # installer to run, so the bare executable ships as a zip too.
+          Compress-Archive -Path src-tauri/target/release/odyssey-design.exe `
+            -DestinationPath "out/OdysseyDesign_${version}_Windows_x64_portable.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: out/
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- macos --
+  macos:
+    name: macOS ${{ matrix.label }}
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            label: arm64
+          - target: x86_64-apple-darwin
+            label: x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the disk image
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles dmg
+
+      - name: Collect the artifact
+        run: |
+          version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+            src-tauri/tauri.conf.json | head -1)"
+          mkdir -p out
+          find "src-tauri/target/${{ matrix.target }}/release/bundle/dmg" -name '*.dmg' \
+            -exec cp {} "out/OdysseyDesign_${version}_macOS_${{ matrix.label }}.dmg" \;
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.label }}
+          path: out/
+          if-no-files-found: error
+
+  # -------------------------------------------------------------- publish --
+  publish:
+    name: Publish the release
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    # A manual run builds and checks the artifacts without publishing, so the
+    # matrix can be exercised on a branch before a tag is ever pushed.
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: staging
+
+      - name: Gather the files and checksum them
+        run: |
+          mkdir -p dist
+          find staging -type f -exec cp {} dist/ \;
+          cd dist
+          sha256sum * > checksums.txt
+          echo "### Files"
+          cat checksums.txt
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

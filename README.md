@@ -58,15 +58,16 @@ is play/pause, frame step, home/end, and a scrubbable ruler. Keyboard: space to
 play, S to split at the playhead, Delete to remove, arrows to step a frame,
 shift+arrows to step a second, Ctrl+Z / Ctrl+Shift+Z to undo and redo.
 
-**Effects.** Sixteen native: colour (brightness, contrast, saturation, gamma),
-hue, blur, sharpen, vignette, chroma key, opacity, fade, transform, rotate,
-crop, text overlay, volume, audio fade, high-pass and low-pass — **plus every
-frei0r plugin installed on the machine**, browsable by name from the inspector.
-That is the same plugin library Kdenlive draws on; this machine has 166, for 182
-effects in total.
+**Effects.** 135 native — 90 visual across colour, image, stylise, geometry,
+keying, compositing, text and repair, and 45 audio — **plus every frei0r plugin
+installed on the machine**, browsable by name from the inspector. That is the
+same plugin library Kdenlive draws on; this machine has 166, for 301 effects in
+total. Alongside them are 30 transitions and 42 blend modes, each previewed by
+the compositor exactly as the export writes it.
 
-**Keyframes on every numeric parameter**, with linear, hold, ease-in, ease-out
-and ease-in-out interpolation, set at the playhead. Animation reaches ffmpeg by
+**Keyframes on every numeric parameter**, with 28 interpolation curves —
+linear and hold, the ease family, and sine, cubic, quart, quint, expo, circ,
+back, elastic and bounce — set at the playhead. Animation reaches ffmpeg by
 whichever of three routes that filter actually supports, and each effect card
 says which one it used:
 
@@ -134,6 +135,55 @@ appear only in the export. ffmpeg is always the authority on the final output.
 One renderer limitation: `sendcmd` targets a filter by name, so
 two animated effects of the same kind on one clip receive each other's
 commands.
+
+## Installing
+
+Download `OdysseyDesign_<version>_Linux.run` from the releases page, make it
+executable and run it:
+
+```bash
+chmod +x OdysseyDesign_0.1.0_Linux.run
+./OdysseyDesign_0.1.0_Linux.run
+```
+
+That is the whole thing. The installer is one self-contained file carrying a
+prebuilt binary, so there is no Rust and no Node to install and nothing to
+compile. It opens a graphical wizard, checks for the libraries the application
+needs and offers to fetch any that are missing through your own package
+manager, then adds Odyssey to your applications menu.
+
+Installing **just for you** goes to `~/.local/opt/odyssey-design` and needs no
+password. Installing **for all users** goes to `/opt/odyssey-design` and asks
+for one. Either way, remove it again with:
+
+```bash
+~/.local/opt/odyssey-design/uninstall.sh    # or /opt/odyssey-design/uninstall.sh
+```
+
+Your documents live in your user data directory and are never touched by
+installing, upgrading or removing the application.
+
+On a machine with no desktop session, `--text` runs the same wizard in the
+terminal. `--check` verifies the download without installing anything, and
+`--extract DIR` unpacks the payload so you can see exactly what would be
+installed.
+
+### Or through your package manager
+
+```bash
+yay -S odyssey-design-bin                              # Arch, via the AUR
+winget install Fs1lyric.OdysseyDesign                  # Windows
+scoop bucket add odyssey https://github.com/Fs1lyric/scoop-odyssey
+scoop install odyssey-design                           # Windows, portable
+brew install --cask fs1lyric/odyssey/odyssey-design    # macOS
+```
+
+Linux is the tested platform. The Windows and macOS builds come out of the
+release workflow and have not been through the same use, and nothing is
+code-signed, so SmartScreen and Gatekeeper will both warn. See
+[`packaging/`](packaging/) for how all of it is built and
+[the downloads page](https://fs1lyric.github.io/odyssey-design/downloads.html)
+for checksums.
 
 ## Running it
 

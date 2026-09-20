@@ -1,0 +1,103 @@
+#!/bin/sh
+# Odyssey Design @VERSION@ — self-extracting installer.
+#
+# This file is a shell script with an xz-compressed tar archive appended to it.
+# Running it unpacks the archive into a temporary directory and starts the
+# installer; the temporary directory is removed afterwards either way.
+#
+#   ./OdysseyDesign_@VERSION@_Linux.run            install (graphical if possible)
+#   ./OdysseyDesign_@VERSION@_Linux.run --text     install in the terminal
+#   ./OdysseyDesign_@VERSION@_Linux.run --check    verify this file, install nothing
+#   ./OdysseyDesign_@VERSION@_Linux.run --extract DIR
+#                                                  unpack only, install nothing
+
+set -eu
+
+VERSION="@VERSION@"
+CHECKSUM="@CHECKSUM@"
+PAYLOAD_SIZE="@SIZE@"
+MARKER="__ODYSSEY_PAYLOAD_BELOW__"
+
+die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+
+usage() { sed -n '2,12p' "$0" | sed 's/^# \?//'; }
+
+EXTRACT_TO=""
+CHECK_ONLY=0
+TEXT_MODE=0
+PASSTHROUGH=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)    usage; exit 0 ;;
+    --version)    echo "Odyssey Design $VERSION"; exit 0 ;;
+    --check)      CHECK_ONLY=1 ;;
+    --text|--nox11|--noexec)
+                  TEXT_MODE=1 ;;
+    --extract)    shift; [ $# -gt 0 ] || die "--extract needs a directory"
+                  EXTRACT_TO="$1" ;;
+    --)           shift; PASSTHROUGH="$*"; break ;;
+    *)            die "unknown option: $1 (try --help)" ;;
+  esac
+  shift
+done
+
+for tool in tar xz; do
+  command -v "$tool" >/dev/null 2>&1 || die "$tool is required to unpack this installer"
+done
+
+# The archive begins on the line after the marker. awk stops reading there, so
+# it never walks into the compressed bytes.
+OFFSET="$(awk "/^${MARKER}\$/ { print NR + 1; exit }" "$0")"
+[ -n "$OFFSET" ] || die "this file is corrupt: no payload marker found"
+
+# A truncated download is the common failure, and it is worth catching before
+# anything is written to the system.
+if command -v sha256sum >/dev/null 2>&1; then
+  printf 'Verifying (payload %s)...\n' "$PAYLOAD_SIZE"
+  ACTUAL="$(tail -n +"$OFFSET" "$0" | sha256sum | cut -d' ' -f1)"
+  [ "$ACTUAL" = "$CHECKSUM" ] || die "checksum mismatch — this file is corrupt or incomplete.
+  expected $CHECKSUM
+  got      $ACTUAL"
+fi
+
+if [ "$CHECK_ONLY" -eq 1 ]; then
+  echo "Odyssey Design $VERSION — this installer is intact."
+  exit 0
+fi
+
+if [ -n "$EXTRACT_TO" ]; then
+  mkdir -p "$EXTRACT_TO"
+  tail -n +"$OFFSET" "$0" | tar -xJf - -C "$EXTRACT_TO"
+  echo "Unpacked to $EXTRACT_TO"
+  exit 0
+fi
+
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/odyssey-install.XXXXXXXX")" ||
+  die "could not create a temporary directory"
+# Root reads setup.sh back out of here during a system-wide install.
+chmod 755 "$WORKDIR"
+cleanup() { rm -rf "$WORKDIR"; }
+trap cleanup EXIT HUP INT TERM
+
+printf 'Unpacking Odyssey Design %s...\n' "$VERSION"
+tail -n +"$OFFSET" "$0" | tar -xJf - -C "$WORKDIR" ||
+  die "could not unpack the payload"
+
+[ -x "$WORKDIR/setup.sh" ] || die "the payload is missing its setup script"
+
+if [ "$TEXT_MODE" -eq 1 ]; then
+  ODYSSEY_TEXT_INSTALL=1
+  export ODYSSEY_TEXT_INSTALL
+fi
+
+# The wizard's own exit status is this file's exit status, so a cancelled or
+# failed install is visible to whatever ran it. set -e must not short-circuit
+# that, hence the explicit capture.
+STATUS=0
+# shellcheck disable=SC2086
+"$WORKDIR/setup.sh" $PASSTHROUGH || STATUS=$?
+
+exit $STATUS
+
+__ODYSSEY_PAYLOAD_BELOW__
