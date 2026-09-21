@@ -1,0 +1,138 @@
+name: Stress
+
+# 100 stress cases at 4K and 8K. Run by hand; it takes a while and is not a
+# gate on every push. 84 real renders are split across ten runners, the 16
+# browser cases of the preview pipeline run on one more, and a last job
+# merges every result into one report on the run's summary page.
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  render:
+    name: Renders (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev patchelf ffmpeg frei0r-plugins
+
+      - name: Machine
+        run: |
+          ffmpeg -version | head -1
+          nproc
+          free -h
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: stress
+
+      - name: Stress cases
+        working-directory: src-tauri
+        env:
+          STRESS_SHARD: ${{ matrix.shard }}
+          STRESS_SHARDS: 10
+        run: cargo test --release stress_suite -- --ignored --nocapture
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-render-${{ matrix.shard }}
+          path: src-tauri/target/test-scratch/stress/report.jsonl
+          if-no-files-found: warn
+
+  browser:
+    name: Preview pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Stress cases
+        run: |
+          npx vite --port 5199 --strictPort > vite.log 2>&1 &
+          for i in $(seq 1 60); do curl -s -o /dev/null http://localhost:5199/ && break; sleep 1; done
+          # SwiftShader, the software GPU, so the limits are the conservative
+          # ones a modest real GPU would have.
+          google-chrome --headless=new --no-sandbox --use-angle=swiftshader --enable-unsafe-swiftshader \
+            --virtual-time-budget=1800000 --dump-dom \
+            http://localhost:5199/scripts/stress-browser/index.html > dom.html 2> chrome.log || true
+          python3 - <<'EOF'
+          import html, json, re, sys
+          dom = open("dom.html").read()
+          m = re.search(r'<pre id="out">(.*?)</pre>', dom, re.S)
+          text = html.unescape(m.group(1)) if m else "no output"
+          print(text)
+          js = re.search(r"^JSON (.*)$", text, re.M)
+          rows = json.loads(js.group(1)) if js else []
+          with open("browser.jsonl", "w") as f:
+              for i, r in enumerate(rows):
+                  f.write(json.dumps({"id": 84 + i, "name": "preview-" + r["name"], "res": r["res"], "ok": r["ok"],
+                                      "secs": r["ms_per_frame"] / 1000, "peak_mib": 0,
+                                      "detail": ("GPU pass reduced to fit; " if r["reduced"] else "") + "; ".join(r["problems"])
+                                                or f'{r["ms_per_frame"]:.0f} ms/frame'}) + "\n")
+          sys.exit(0 if len(rows) == 16 and all(r["ok"] for r in rows) else 1)
+          EOF
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-browser
+          path: browser.jsonl
+          if-no-files-found: warn
+
+  report:
+    name: Report
+    needs: [render, browser]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: stress-*
+          path: results
+      - name: Summarise
+        run: |
+          python3 - <<'EOF'
+          import glob, json, os, sys
+          rows = []
+          for f in glob.glob("results/**/*.jsonl", recursive=True):
+              rows += [json.loads(l) for l in open(f) if l.strip()]
+          rows.sort(key=lambda r: r["id"])
+          ok = sum(r["ok"] for r in rows)
+          out = [f"## Stress: {ok} of {len(rows)} passed (100 expected)", "",
+                 "| # | Res | Case | Result | Time | Peak ffmpeg memory | Detail |", "|---|---|---|---|---|---|---|"]
+          for r in rows:
+              mem = f'{r["peak_mib"]} MiB' if r["peak_mib"] else ""
+              out.append(f'| {r["id"]} | {r["res"]} | {r["name"]} | {"pass" if r["ok"] else "**FAIL**"} | '
+                         f'{r["secs"]:.1f}s | {mem} | {r["detail"]} |')
+          for res in ("4K", "8K"):
+              sub = [r for r in rows if r["res"] == res and r["peak_mib"]]
+              if sub:
+                  top = max(sub, key=lambda r: r["peak_mib"])
+                  out.append(f'\n{res}: heaviest case {top["name"]} at {top["peak_mib"]} MiB; '
+                             f'slowest {max(sub, key=lambda r: r["secs"])["name"]}.')
+          text = "\n".join(out)
+          print(text)
+          open(os.environ["GITHUB_STEP_SUMMARY"], "a").write(text + "\n")
+          sys.exit(0 if len(rows) == 100 and ok == 100 else 1)
+          EOF

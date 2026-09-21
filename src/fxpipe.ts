@@ -450,6 +450,10 @@ class Gpu {
   private lut: WebGLTexture;
   private ping: Array<{ tex: WebGLTexture; fbo: WebGLFramebuffer; w: number; h: number }> = [];
   private vao: WebGLVertexArrayObject | null;
+  /** The largest texture side the GPU accepts. */
+  readonly maxSize: number;
+  /** The last GL error after a run, 0 when clean. */
+  error = 0;
 
   static create(): Gpu | null {
     try {
@@ -473,6 +477,10 @@ class Gpu {
     this.src = this.texture();
     this.lut = this.texture();
     this.vao = gl.createVertexArray();
+    this.maxSize = Math.min(
+      gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
+      gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
+    );
     for (let i = 0; i < 2; i++) {
       const tex = this.texture();
       const fbo = gl.createFramebuffer()!;
@@ -598,7 +606,8 @@ class Gpu {
     o.clearRect(0, 0, output.canvas.width, output.canvas.height);
     o.drawImage(this.canvas, 0, 0);
     o.restore();
-    return true;
+    this.error = gl.getError();
+    return this.error === gl.NO_ERROR;
   }
 }
 
@@ -1049,6 +1058,13 @@ function effectName(e: Effect): string {
 export class FxPipeline {
   private pool = new Pool();
   private gpu: Gpu | null | undefined;
+  /** GPU passes that failed and were skipped, since construction. */
+  failures = 0;
+
+  /** The GPU's largest texture side, or 0 without a GPU path. */
+  get maxTexture(): number {
+    return this.accelerated ? this.gpu!.maxSize : 0;
+  }
 
   /** True when the GPU path is available. Without it the preview still runs
    *  geometry and reports every colour effect as missing. */
@@ -1086,8 +1102,24 @@ export class FxPipeline {
 
     const flush = () => {
       if (!queue.length) return;
-      const out = this.pool.acquire(s.w, s.h, k);
-      if (this.gpu && this.gpu.run(s, queue, out, k)) s = out;
+      const gpu = this.gpu;
+      if (gpu) {
+        // An 8K layer rotated grows past the largest texture many GPUs take
+        // (8485 px at 45 degrees against a common 8192). Such a pass runs at
+        // the largest size the GPU accepts; the layer keeps its logical size,
+        // so only its sharpness drops, and only for that layer.
+        let src = s;
+        let kk = k;
+        const side = Math.max(s.canvas.width, s.canvas.height);
+        if (side > gpu.maxSize) {
+          kk = k * ((gpu.maxSize - 1) / side);
+          src = this.pool.acquire(s.w, s.h, kk);
+          src.ctx.drawImage(s.canvas, 0, 0, s.w, s.h);
+        }
+        const out = this.pool.acquire(s.w, s.h, kk);
+        if (gpu.run(src, queue, out, kk)) s = out;
+        else this.failures++;
+      }
       queue = [];
     };
 

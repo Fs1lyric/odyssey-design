@@ -2,6 +2,8 @@
 
 mod db;
 mod sheet;
+#[cfg(test)]
+mod stress;
 mod sync;
 mod timeline;
 mod track;

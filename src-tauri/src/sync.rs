@@ -35,7 +35,10 @@ pub struct SyncResult {
 /// Sync every source in `others` to `reference`.
 pub fn sync(reference: &str, others: &[String]) -> Result<Vec<SyncResult>> {
     let r = decode(reference)?;
-    others.iter().map(|o| decode(o).map(|x| correlate(&r, &x))).collect()
+    others
+        .iter()
+        .map(|o| decode(o).map(|x| correlate(&r, &x)))
+        .collect()
 }
 
 fn decode(path: &str) -> Result<Vec<f32>> {
@@ -44,14 +47,40 @@ fn decode(path: &str) -> Result<Vec<f32>> {
         return Err(Error::Invalid(format!("{path} has no audio to sync by")));
     }
     let out = Command::new("ffmpeg")
-        .args(["-hide_banner", "-v", "error", "-i", &info.path, "-t", &format!("{WINDOW_SECS}")])
-        .args(["-vn", "-ac", "1", "-ar", &RATE.to_string(), "-f", "f32le", "-"])
+        .args([
+            "-hide_banner",
+            "-v",
+            "error",
+            "-i",
+            &info.path,
+            "-t",
+            &format!("{WINDOW_SECS}"),
+        ])
+        .args([
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            &RATE.to_string(),
+            "-f",
+            "f32le",
+            "-",
+        ])
         .output()
-        .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { Error::NoFfmpeg } else { Error::Io(e) })?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::NoFfmpeg
+            } else {
+                Error::Io(e)
+            }
+        })?;
     if !out.status.success() {
-        return Err(Error::Render(String::from_utf8_lossy(&out.stderr).trim().to_string()));
+        return Err(Error::Render(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ));
     }
-    Ok(out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect())
+    let (samples, _) = out.stdout.as_chunks::<4>();
+    Ok(samples.iter().map(|b| f32::from_le_bytes(*b)).collect())
 }
 
 /// GCC-PHAT between `r` and `x`.
@@ -89,10 +118,17 @@ fn correlate(r: &[f32], x: &[f32]) -> SyncResult {
         }
     }
     let typical = (sum / n as f64).max(1e-12);
-    let lag = if best > n / 2 { best as f64 - n as f64 } else { best as f64 };
+    let lag = if best > n / 2 {
+        best as f64 - n as f64
+    } else {
+        best as f64
+    };
     // A lag of k means the source's sound arrives k samples after the
     // reference's, so reference time r is source time r + k/RATE.
-    SyncResult { offset: lag / RATE as f64, confidence: peak / typical }
+    SyncResult {
+        offset: lag / RATE as f64,
+        confidence: peak / typical,
+    }
 }
 
 /// In-place iterative radix-2 FFT. `inverse` also scales by 1/n.

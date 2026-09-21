@@ -2418,7 +2418,12 @@ fn sanitise_curve(c: &str) -> &'static str {
 /// the fallback, so a typo cannot reach the filter string.
 fn parse_rgb(c: &str, fallback: (u8, u8, u8)) -> (u8, u8, u8) {
     // ffmpeg colours may carry an @alpha suffix; Tint has no use for it.
-    let c = c.trim().split('@').next().unwrap_or("").to_ascii_lowercase();
+    let c = c
+        .trim()
+        .split('@')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
     // The HTML named colours, which are ffmpeg's values for the same names.
     // Every other effect hands names straight to ffmpeg; Tint does its own
     // arithmetic, so without this table a name quietly became the fallback.
@@ -6009,7 +6014,13 @@ pub fn measure_loudness(project: &Project, cache_dir: &Path) -> Result<LoudnessR
             .args(["-af", "ebur128=peak=true", "-f", "null", "-"])
             .output()?;
         if !out.status.success() {
-            return Err(Error::Render(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("").to_string()));
+            return Err(Error::Render(
+                String::from_utf8_lossy(&out.stderr)
+                    .lines()
+                    .last()
+                    .unwrap_or("")
+                    .to_string(),
+            ));
         }
         parse_ebur128(&String::from_utf8_lossy(&out.stderr))
     });
@@ -6033,15 +6044,23 @@ fn parse_ebur128(log: &str) -> Result<LoudnessReport> {
         }
         if !summary {
             if line.contains(" M:") && line.contains(" S:") {
-                if let Some(v) = field(line, " M:") { m_max = m_max.max(v); }
-                if let Some(v) = field(line, " S:") { s_max = s_max.max(v); }
+                if let Some(v) = field(line, " M:") {
+                    m_max = m_max.max(v);
+                }
+                if let Some(v) = field(line, " S:") {
+                    s_max = s_max.max(v);
+                }
             }
             continue;
         }
         let t = line.trim_start();
-        if t.starts_with("I:") { i = field(t, "I:"); }
-        else if t.starts_with("LRA:") { lra = field(t, "LRA:"); }
-        else if t.starts_with("Peak:") { tp = field(t, "Peak:"); }
+        if t.starts_with("I:") {
+            i = field(t, "I:");
+        } else if t.starts_with("LRA:") {
+            lra = field(t, "LRA:");
+        } else if t.starts_with("Peak:") {
+            tp = field(t, "Peak:");
+        }
     }
     match (i, lra, tp) {
         (Some(integrated), Some(range), Some(true_peak)) => Ok(LoudnessReport {
@@ -6051,7 +6070,9 @@ fn parse_ebur128(log: &str) -> Result<LoudnessReport> {
             momentary_max: m_max,
             short_term_max: s_max,
         }),
-        _ => Err(Error::Render("ebur128 printed no summary; is there any audio?".into())),
+        _ => Err(Error::Render(
+            "ebur128 printed no summary; is there any audio?".into(),
+        )),
     }
 }
 
@@ -7681,8 +7702,17 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("source.png");
         let status = Command::new("ffmpeg")
-            .args(["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=1",
-                   "-frames:v", "1"])
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=1",
+                "-frames:v",
+                "1",
+            ])
             .arg(&src)
             .status()
             .unwrap();
@@ -7690,55 +7720,150 @@ pub(crate) mod tests {
 
         let cases: Vec<(&str, serde_json::Value)> = vec![
             ("none", serde_json::json!({"kind": "opacity", "level": 1})),
-            ("color", serde_json::json!({"kind": "color", "brightness": 0.12, "contrast": 1.3, "saturation": 1.5, "gamma": 1.2})),
+            (
+                "color",
+                serde_json::json!({"kind": "color", "brightness": 0.12, "contrast": 1.3, "saturation": 1.5, "gamma": 1.2}),
+            ),
             ("hue", serde_json::json!({"kind": "hue", "degrees": 60})),
             ("blur", serde_json::json!({"kind": "blur", "sigma": 3})),
-            ("boxblur", serde_json::json!({"kind": "boxblur", "radius": 3})),
-            ("sharpen", serde_json::json!({"kind": "sharpen", "amount": 1})),
-            ("vignette", serde_json::json!({"kind": "vignette", "angle": 0.8})),
-            ("chromakey", serde_json::json!({"kind": "chromakey", "color": "0x00ff00", "similarity": 0.25, "blend": 0.1})),
-            ("colorkey", serde_json::json!({"kind": "colorkey", "color": "red", "similarity": 0.3, "blend": 0.1})),
-            ("lumakey", serde_json::json!({"kind": "lumakey", "threshold": 0.0, "tolerance": 0.1})),
-            ("despill", serde_json::json!({"kind": "despill", "colour": "green", "amount": 0.5})),
-            ("crop", serde_json::json!({"kind": "crop", "x": 40, "y": 20, "width": 160, "height": 100})),
-            ("rotate", serde_json::json!({"kind": "rotate", "degrees": 20})),
-            ("mask", serde_json::json!({"kind": "mask", "shape": "ellipse", "x": 45, "y": 55, "width": 60, "height": 50, "feather": 20, "invert": false})),
-            ("maskrect", serde_json::json!({"kind": "mask", "shape": "rectangle", "x": 50, "y": 50, "width": 40, "height": 40, "feather": 10, "invert": true})),
-            ("tint", serde_json::json!({"kind": "tint", "black": "navy", "white": "yellow", "amount": 0.8})),
-            ("exposure", serde_json::json!({"kind": "exposure", "stops": 0.7})),
+            (
+                "boxblur",
+                serde_json::json!({"kind": "boxblur", "radius": 3}),
+            ),
+            (
+                "sharpen",
+                serde_json::json!({"kind": "sharpen", "amount": 1}),
+            ),
+            (
+                "vignette",
+                serde_json::json!({"kind": "vignette", "angle": 0.8}),
+            ),
+            (
+                "chromakey",
+                serde_json::json!({"kind": "chromakey", "color": "0x00ff00", "similarity": 0.25, "blend": 0.1}),
+            ),
+            (
+                "colorkey",
+                serde_json::json!({"kind": "colorkey", "color": "red", "similarity": 0.3, "blend": 0.1}),
+            ),
+            (
+                "lumakey",
+                serde_json::json!({"kind": "lumakey", "threshold": 0.0, "tolerance": 0.1}),
+            ),
+            (
+                "despill",
+                serde_json::json!({"kind": "despill", "colour": "green", "amount": 0.5}),
+            ),
+            (
+                "crop",
+                serde_json::json!({"kind": "crop", "x": 40, "y": 20, "width": 160, "height": 100}),
+            ),
+            (
+                "rotate",
+                serde_json::json!({"kind": "rotate", "degrees": 20}),
+            ),
+            (
+                "mask",
+                serde_json::json!({"kind": "mask", "shape": "ellipse", "x": 45, "y": 55, "width": 60, "height": 50, "feather": 20, "invert": false}),
+            ),
+            (
+                "maskrect",
+                serde_json::json!({"kind": "mask", "shape": "rectangle", "x": 50, "y": 50, "width": 40, "height": 40, "feather": 10, "invert": true}),
+            ),
+            (
+                "tint",
+                serde_json::json!({"kind": "tint", "black": "navy", "white": "yellow", "amount": 0.8}),
+            ),
+            (
+                "exposure",
+                serde_json::json!({"kind": "exposure", "stops": 0.7}),
+            ),
             ("invert", serde_json::json!({"kind": "invert"})),
             ("monochrome", serde_json::json!({"kind": "monochrome"})),
             ("sepia", serde_json::json!({"kind": "sepia"})),
-            ("temperature", serde_json::json!({"kind": "temperature", "kelvin": 3500})),
-            ("levels", serde_json::json!({"kind": "levels", "black": 0.1, "white": 0.8})),
-            ("posterize", serde_json::json!({"kind": "posterize", "levels": 4})),
-            ("vibrance", serde_json::json!({"kind": "vibrance", "intensity": 0.8})),
-            ("colorbalance", serde_json::json!({"kind": "colorbalance", "r": 0.3, "g": 0.0, "b": -0.3})),
-            ("curves", serde_json::json!({"kind": "curves", "master": [[0, 0], [0.5, 0.7], [1, 1]], "red": [], "green": [], "blue": []})),
-            ("flip", serde_json::json!({"kind": "flip", "horizontal": true, "vertical": false})),
-            ("pixelate", serde_json::json!({"kind": "pixelate", "size": 12})),
+            (
+                "temperature",
+                serde_json::json!({"kind": "temperature", "kelvin": 3500}),
+            ),
+            (
+                "levels",
+                serde_json::json!({"kind": "levels", "black": 0.1, "white": 0.8}),
+            ),
+            (
+                "posterize",
+                serde_json::json!({"kind": "posterize", "levels": 4}),
+            ),
+            (
+                "vibrance",
+                serde_json::json!({"kind": "vibrance", "intensity": 0.8}),
+            ),
+            (
+                "colorbalance",
+                serde_json::json!({"kind": "colorbalance", "r": 0.3, "g": 0.0, "b": -0.3}),
+            ),
+            (
+                "curves",
+                serde_json::json!({"kind": "curves", "master": [[0, 0], [0.5, 0.7], [1, 1]], "red": [], "green": [], "blue": []}),
+            ),
+            (
+                "flip",
+                serde_json::json!({"kind": "flip", "horizontal": true, "vertical": false}),
+            ),
+            (
+                "pixelate",
+                serde_json::json!({"kind": "pixelate", "size": 12}),
+            ),
             ("mirror", serde_json::json!({"kind": "mirror"})),
-            ("lenscorrect", serde_json::json!({"kind": "lenscorrect", "k1": -0.3, "k2": 0.1})),
-            ("aberration", serde_json::json!({"kind": "chromaticaberration", "amount": 6})),
+            (
+                "lenscorrect",
+                serde_json::json!({"kind": "lenscorrect", "k1": -0.3, "k2": 0.1}),
+            ),
+            (
+                "aberration",
+                serde_json::json!({"kind": "chromaticaberration", "amount": 6}),
+            ),
             ("emboss", serde_json::json!({"kind": "emboss"})),
             ("crisp", serde_json::json!({"kind": "crisp"})),
-            ("halfopacity", serde_json::json!({"kind": "opacity", "level": 0.5})),
-            ("scanlines", serde_json::json!({"kind": "scanlines", "amount": 0.5})),
-            ("transpose", serde_json::json!({"kind": "transpose", "dir": 1})),
-            ("reframe", serde_json::json!({"kind": "reframe", "aspect": 1.0})),
-            ("transform", serde_json::json!({"kind": "transform", "scale": 0.6, "x": 20, "y": 10})),
-            ("channelmixer", serde_json::json!({"kind": "channelmixer", "rr": 0.5, "gg": 1.0, "bb": 1.5})),
+            (
+                "halfopacity",
+                serde_json::json!({"kind": "opacity", "level": 0.5}),
+            ),
+            (
+                "scanlines",
+                serde_json::json!({"kind": "scanlines", "amount": 0.5}),
+            ),
+            (
+                "transpose",
+                serde_json::json!({"kind": "transpose", "dir": 1}),
+            ),
+            (
+                "reframe",
+                serde_json::json!({"kind": "reframe", "aspect": 1.0}),
+            ),
+            (
+                "transform",
+                serde_json::json!({"kind": "transform", "scale": 0.6, "x": 20, "y": 10}),
+            ),
+            (
+                "channelmixer",
+                serde_json::json!({"kind": "channelmixer", "rr": 0.5, "gg": 1.0, "bb": 1.5}),
+            ),
             ("swapuv", serde_json::json!({"kind": "swapuv"})),
-            ("drawbox", serde_json::json!({"kind": "drawbox", "x": 30, "y": 30, "w": 120, "h": 80, "color": "yellow", "thickness": 6})),
+            (
+                "drawbox",
+                serde_json::json!({"kind": "drawbox", "x": 30, "y": 30, "w": 120, "h": 80, "color": "yellow", "thickness": 6}),
+            ),
         ];
 
         let mut index = Vec::new();
         let mut failed = Vec::new();
         for (name, json) in &cases {
-            let effect: Effect = serde_json::from_value(json.clone())
-                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            let effect: Effect =
+                serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{name}: {e}"));
             let mut c = media_clip("1", &src, 0.0, 0.0, 1.0);
-            c.source = Source::Still { path: src.to_string_lossy().to_string() };
+            c.source = Source::Still {
+                path: src.to_string_lossy().to_string(),
+            };
             c.effects = vec![effect];
             let p = Project {
                 width: 320,
@@ -7753,7 +7878,11 @@ pub(crate) mod tests {
                 Err(e) => failed.push(format!("{name}: {e}")),
             }
         }
-        std::fs::write(dir.join("cases.json"), serde_json::to_string_pretty(&index).unwrap()).unwrap();
+        std::fs::write(
+            dir.join("cases.json"),
+            serde_json::to_string_pretty(&index).unwrap(),
+        )
+        .unwrap();
         assert!(failed.is_empty(), "renders failed: {failed:#?}");
     }
 
@@ -7767,7 +7896,10 @@ pub(crate) mod tests {
         let report = measure_loudness(&p, &scratch("loudness-cache")).unwrap();
         // A full-scale sine is loud; the exact figure matters less than that
         // every field came back from ffmpeg rather than a default.
-        assert!(report.true_peak.is_finite() && report.true_peak < 1.0, "{report:?}");
+        assert!(
+            report.true_peak.is_finite() && report.true_peak < 1.0,
+            "{report:?}"
+        );
         assert!(report.momentary_max.is_finite(), "{report:?}");
     }
 
