@@ -912,7 +912,8 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   transition: box-shadow 120ms ease;
 }
 .vid__clip:active { cursor: grabbing; }
-.vid__clip[aria-selected="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.vid__clip[data-selected="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.vid__clip[data-primary="true"] { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 1px var(--accent); }
 .vid__clip[data-kind="title"] { background-color: var(--accent-weak); }
 .vid__clip[data-kind="color"] { background-color: var(--ok-weak); }
 .vid__clip:focus-visible { outline-offset: -3px; }
@@ -956,7 +957,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
 }
 .vid__handle--l { left: 0; }
 .vid__handle--r { right: 0; }
-.vid__clip[aria-selected="true"] .vid__handle { background: var(--accent); opacity: 0.5; }
+.vid__clip[data-selected="true"] .vid__handle { background: var(--accent); opacity: 0.5; }
 
 /* Red is the playhead, by convention every editor already teaches. */
 .vid__playhead {
@@ -1084,6 +1085,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
     "name  name"
     "meter slider"
     "db    db"
+    "pan   pan"
     "btns  btns";
   align-items: center;
   justify-items: center;
@@ -1228,19 +1230,25 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
 /* The monitor says which mode it is in, so rendered output is never mistaken
    for a live composite. */
 .vid__monitor { position: relative; }
-.vid__monitor[data-rendered="true"]::after {
-  content: "Rendered preview";
+.vid__status {
   position: absolute;
   top: var(--s3);
   right: var(--s3);
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--t-2xs);
   font-weight: 550;
-  color: var(--ok);
+  color: var(--warn);
   background: rgb(11 13 17 / 0.72);
   border-radius: var(--r-sm);
   padding: 2px var(--s2);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: help;
 }
+.vid__monitor[data-mode="rendered"] .vid__status,
+.vid__monitor[data-mode="exact"] .vid__status { color: var(--ok); }
 
 /* ---------- Side panel tabs, bin and subtitles ---------- */
 
@@ -1369,7 +1377,7 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
 .vid__fadegrip--in { left: 2px; }
 .vid__fadegrip--out { right: 2px; }
 .vid__clip:hover .vid__fadegrip,
-.vid__clip[aria-selected="true"] .vid__fadegrip { opacity: 1; }
+.vid__clip[data-selected="true"] .vid__fadegrip { opacity: 1; }
 
 /* ---------- Monitor guides and split compare ---------- */
 
@@ -1483,3 +1491,187 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
   width: 100%;
   padding: 2px var(--s1);
 }
+
+/* ---------- Premiere feature set ---------- */
+
+/* Clip labels ride on the left edge so they read over thumbnails too. */
+.vid__clip { border-left: 3px solid var(--clip-label, transparent); }
+.vid__clip[data-offline="true"] {
+  background-image: repeating-linear-gradient(135deg, var(--danger-weak), var(--danger-weak) 6px, var(--surface-3) 6px, var(--surface-3) 12px) !important;
+}
+.vid__clip[data-offline="true"] .vid__cliplabel::after { content: " · offline"; color: var(--danger); }
+.vid__clip[data-kind="bars"] {
+  background-image: linear-gradient(90deg, #c0c0c0 0 14%, #c0c000 14% 28%, #00c0c0 28% 42%, #00c000 42% 57%, #c000c0 57% 71%, #c00000 71% 85%, #0000c0 85%);
+}
+.vid__clip[data-kind="bars"] .vid__cliplabel { color: #0B0D11; }
+.vid__clip[data-grouped="true"] .vid__cliplabel::before,
+.vid__clip[data-linked="true"] .vid__cliplabel::before { content: "⛓ "; }
+/* A through edit: continuous source either side of a cut. */
+.vid__clip[data-through="true"]::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 30%;
+  bottom: 30%;
+  border-left: 2px dotted var(--warn);
+  pointer-events: none;
+}
+
+.vid__band {
+  position: absolute;
+  inset: auto 0 2px 0;
+  height: calc(100% - 20px);
+  width: 100%;
+  pointer-events: none;
+}
+.vid__bandline { stroke: var(--warn); stroke-width: 1.5px; fill: none; }
+.vid__bandhit { stroke: transparent; stroke-width: 10px; fill: none; pointer-events: stroke; cursor: copy; }
+.vid__band:has(.vid__bandhit:hover) .vid__bandline { stroke-width: 2.5px; }
+
+.vid__lane[data-drop="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.vid__marquee {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  pointer-events: none;
+}
+
+.vid__markerspan {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 6px;
+  background: var(--marker, var(--accent));
+  opacity: 0.45;
+  border-radius: var(--r-sm);
+  pointer-events: none;
+}
+.vid__marker[data-kind="chapter"] { border-radius: 50% 50% 0 0; }
+
+.vid__tc { cursor: text; }
+.vid__tcinput {
+  width: 12ch;
+  font-family: var(--mono);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.vid__monitor[data-zoom="fixed"] { overflow: auto; place-items: start; }
+.vid__monitor[data-zoom="fixed"] .vid__canvas { max-width: none; max-height: none; }
+.vid__canvas { touch-action: none; }
+
+.vid__dialog--wide { max-width: min(760px, 92vw); }
+.vid__dialogbody { display: flex; flex-direction: column; gap: var(--s3); max-height: 70vh; overflow: auto; }
+.vid__dialogbody select, .vid__dialogbody input[type="text"], .vid__dialogbody input[type="number"] { width: 100%; }
+.vid__danger { color: var(--danger); margin-right: auto; }
+.vid__profiles--scroll { max-height: 220px; overflow: auto; }
+.vid__profile .btn { margin-left: auto; }
+.vid__presetgrid { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.vid__presetgrid .vid__tab { flex: 0 0 auto; }
+
+.vid__source {
+  width: 100%;
+  max-height: 46vh;
+  background: var(--stage-deep);
+  border-radius: var(--r-sm);
+}
+.vid__sourcebar { flex-wrap: wrap; }
+.vid__tcline { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.vid__fxresults { display: flex; flex-direction: column; gap: 1px; }
+.vid__fxhit { justify-content: flex-start; text-align: left; font-size: var(--t-xs); }
+.vid__fx[data-bypassed="true"] > :not(.vid__fxtitle) { opacity: 0.45; }
+.vid__fx[data-bypassed="true"] .vid__fxtitle span:first-child { text-decoration: line-through; }
+
+.vid__binitem { border-left: 3px solid var(--clip-label, transparent); cursor: grab; }
+.vid__binitem[data-offline="true"] .vid__binname { color: var(--danger); }
+.vid__offline { color: var(--danger); border-color: var(--danger); }
+.vid__bin--icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: var(--s2); }
+.vid__bin--icons .vid__binitem { padding: var(--s2); gap: var(--s1); }
+.vid__bintile {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  border-radius: var(--r-sm);
+  background: var(--surface-3) center / cover no-repeat;
+}
+.vid__bintile[data-kind="audio"] { background-color: var(--accent-weak); }
+.vid__bindur {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  font-size: var(--t-2xs);
+  font-family: var(--mono);
+  color: var(--ink-on-media);
+  background: rgb(11 13 17 / 0.72);
+  border-radius: var(--r-sm);
+  padding: 0 4px;
+}
+.vid__markerrow { border-left: 3px solid var(--marker, var(--accent)); cursor: default; }
+
+.vid__pan { grid-area: pan; width: 84px; accent-color: var(--accent); }
+.vid__strip--master { background: var(--accent-weak); }
+.vid__clipled {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 6px;
+  background: var(--surface-3);
+}
+.vid__meter[data-clipped] .vid__clipled { background: var(--danger); }
+
+/* Follows the pointer during a trim drag. */
+.vid__trimreadout {
+  position: fixed;
+  z-index: 50;
+  white-space: pre;
+  font: 550 var(--t-2xs) / 1.45 ui-monospace, "Adwaita Mono", monospace;
+  color: #fff;
+  background: rgb(11 13 17 / 0.86);
+  border-radius: var(--r-sm);
+  padding: var(--s1) var(--s2);
+  pointer-events: none;
+}
+
+/* The open sequence, while editing inside a nest. */
+.vid__crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s1) var(--s3);
+  font-size: var(--t-xs);
+  border-top: 1px solid var(--line);
+  background: var(--accent-weak);
+}
+.vid__crumbs [aria-current] { font-weight: 600; }
+.vid__crumbs .btn { padding: 2px var(--s2); font-size: inherit; }
+.vid__crumbnote { margin-left: auto; color: var(--ink-2); }
+
+/* EBU R128 loudness, beside the master strip. */
+.vid__r128 {
+  flex: 0 0 15rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: var(--t-xs);
+}
+.vid__r128 h4 { margin: 0; font-size: var(--t-xs); font-weight: 600; }
+.vid__r128grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--s3);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.vid__r128grid dt { color: var(--ink-2); cursor: help; }
+.vid__r128grid dd { margin: 0; text-align: right; font-weight: 550; }
+.vid__r128grid dd[data-state="ok"] { color: var(--ok); }
+.vid__r128grid dd[data-state="over"] { color: var(--danger); }
+.vid__r128grid dd[data-state="under"] { color: var(--warn); }
+.vid__r128report { margin: 0; color: var(--ink-2); line-height: 1.4; }
+.vid__r128report[data-state="ok"] { color: var(--ok); }
+.vid__r128report[data-state="warn"] { color: var(--warn); }

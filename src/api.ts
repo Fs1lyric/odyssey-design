@@ -1,7 +1,7 @@
 /** Typed wrappers over the Tauri command surface. */
 import { invoke } from "@tauri-apps/api/core";
 import { devStore, isTauri } from "./devstore";
-import { emptyProject, type Frei0rPlugin, type JobResult, type PreviewChunk, type Project, type Proxy, type RenderJob, type RenderProfile, type Subtitle } from "./timeline";
+import { emptyProject, renderable, type Frei0rPlugin, type JobResult, type PreviewChunk, type Project, type Proxy, type RenderJob, type RenderProfile, type Subtitle } from "./timeline";
 
 export type Kind = "doc" | "sheet" | "slide" | "video" | "asset";
 
@@ -48,6 +48,19 @@ export interface MediaInfo {
   has_audio: boolean;
 }
 
+export interface LoudnessReport {
+  integrated: number;
+  range: number;
+  true_peak: number;
+  momentary_max: number;
+  short_term_max: number;
+}
+
+export interface TrackResult {
+  points: Array<{ t: number; x: number; y: number; confidence: number }>;
+  lost: boolean;
+}
+
 export const api = {
   listItems: async (query: Query = {}) =>
     isTauri() ? invoke<Item[]>("list_items", { query }) : devStore.listItems(query),
@@ -72,28 +85,57 @@ export const api = {
 
   renderProfiles: () => invoke<RenderProfile[]>("render_profiles"),
   frei0rPlugins: () => invoke<Frei0rPlugin[]>("frei0r_plugins"),
+  // Every call that hands a project to the renderer passes it through
+  // `renderable`, so editor-only state such as a bypassed effect never reaches
+  // ffmpeg and a preview key never counts it.
   renderTimelinePreview: (project: Project, start: number, end: number, scale: number) =>
-    invoke<PreviewChunk>("render_timeline_preview", { project, start, end, scale }),
+    invoke<PreviewChunk>("render_timeline_preview", { project: renderable(project), start, end, scale }),
   previewKey: (project: Project, start: number, end: number, scale: number) =>
-    invoke<string>("preview_key", { project, start, end, scale }),
+    invoke<string>("preview_key", { project: renderable(project), start, end, scale }),
   clearTimelinePreviews: () => invoke<number>("clear_timeline_previews"),
 
   createProxy: (path: string, width: number) => invoke<Proxy>("create_proxy", { path, width }),
   findProxy: (path: string, width: number) => invoke<Proxy | null>("find_proxy", { path, width }),
   clearProxies: () => invoke<number>("clear_proxies"),
   hardwareProfiles: () => invoke<RenderProfile[]>("hardware_profiles"),
-  runRenderQueue: (jobs: RenderJob[]) => invoke<JobResult[]>("run_render_queue", { jobs }),
+  runRenderQueue: (jobs: RenderJob[]) =>
+    invoke<JobResult[]>("run_render_queue", { jobs: jobs.map((j) => ({ ...j, project: renderable(j.project) })) }),
   savePreset: (profile: RenderProfile) => invoke<string>("save_preset", { profile }),
   loadPresets: () => invoke<RenderProfile[]>("load_presets"),
   deletePreset: (id: string) => invoke<void>("delete_preset", { id }),
   detectScenes: (source: string, threshold: number) =>
     invoke<number[]>("detect_scenes", { source, threshold }),
-  exportEdl: (project: Project, title: string) => invoke<string>("export_edl", { project, title }),
-  exportOtio: (project: Project, name: string) => invoke<string>("export_otio", { project, name }),
+  exportEdl: (project: Project, title: string) =>
+    invoke<string>("export_edl", { project: renderable(project), title }),
+  exportOtio: (project: Project, name: string) =>
+    invoke<string>("export_otio", { project: renderable(project), name }),
   analyseStabilisation: (source: string) => invoke<string>("analyse_stabilisation", { source }),
   freezeFrame: (source: string, at: number) => invoke<string>("freeze_frame", { source, at }),
   renderZone: (project: Project, profile: RenderProfile, output: string, start: number, end: number) =>
-    invoke<string>("render_zone", { project, profile, output, start, end }),
+    invoke<string>("render_zone", { project: renderable(project), profile, output, start, end }),
+  exportFrame: (project: Project, at: number, output: string) =>
+    invoke<string>("export_frame", { project: renderable(project), at, output }),
+  /** Offsets that line each of `others` up with `reference` by audio. */
+  audioSync: (reference: string, others: string[]) =>
+    invoke<Array<{ offset: number; confidence: number }>>("audio_sync", { reference, others }),
+  /** Follow a region (centre and size, normalised to the picture) through a
+   *  source from `start` to `end` seconds. */
+  trackRegion: (source: string, start: number, end: number, rate: number, region: { x: number; y: number; w: number; h: number }) =>
+    invoke<TrackResult>("track_region", { source, start, end, rate, region }),
+  /** EBU R128 figures for the finished mix, from a real render. */
+  measureLoudness: (project: Project) =>
+    invoke<LoudnessReport>("measure_loudness", { project: renderable(project) }),
+  /** The exact frame at `at` as ffmpeg renders it, cached on disk. */
+  previewFrame: (project: Project, at: number) =>
+    invoke<string>("preview_frame", { project: renderable(project), at }),
+  audioPeak: (source: string, start: number, end: number) =>
+    invoke<number>("audio_peak", { source, start, end }),
+  mediaStatus: async (paths: string[]) =>
+    isTauri() ? invoke<boolean[]>("media_status", { paths }) : paths.map(() => true),
+  autosave: (project: Project, itemId: string) =>
+    invoke<string>("autosave", { project, itemId }),
+  autosaves: (itemId: string) => invoke<string[]>("autosaves", { itemId }),
+  restoreAutosave: (path: string) => invoke<Project>("restore_autosave", { path }),
 
   subtitlesToSrt: (subtitles: Subtitle[]) => invoke<string>("subtitles_to_srt", { subtitles }),
   subtitlesFromSrt: (text: string) => invoke<Subtitle[]>("subtitles_from_srt", { text }),
@@ -103,9 +145,9 @@ export const api = {
   waveform: async (path: string, buckets: number) =>
     isTauri() ? invoke<number[]>("waveform", { path, buckets }) : devStore.waveform(path, buckets),
   renderProject: (project: Project, profile: RenderProfile, output: string) =>
-    invoke<string>("render_project", { project, profile, output }),
+    invoke<string>("render_project", { project: renderable(project), profile, output }),
   projectRenderArgs: (project: Project, profile: RenderProfile, output: string) =>
-    invoke<string[]>("project_render_args", { project, profile, output }),
+    invoke<string[]>("project_render_args", { project: renderable(project), profile, output }),
 };
 
 /** A blank record of each kind, with the right shape in `data`. */

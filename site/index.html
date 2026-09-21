@@ -409,18 +409,13 @@
         </p>
       </div>
       <div class="limit">
-        <h3>The preview approximates</h3>
+        <h3>Some effects preview as exact frames</h3>
         <p>
-          The canvas compositor draws what it can. Chroma key, vignette, crop,
-          rotate and frei0r appear only in the export. ffmpeg is always the
-          authority on the final output.
-        </p>
-      </div>
-      <div class="limit">
-        <h3>One animated filter of a kind per clip</h3>
-        <p>
-          Timed commands target a filter by name, so two animated effects of the
-          same kind on one clip receive each other's commands.
+          The monitor reproduces crop, rotate, chroma key, vignette, masks and
+          most colour work live on the GPU, measured against ffmpeg's output.
+          frei0r plugins, LUTs, temporal filters and nested sequences are
+          named on the monitor and shown as ffmpeg's exact frame while the
+          playhead rests, not during playback.
         </p>
       </div>
       <div class="limit">
