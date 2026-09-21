@@ -77,7 +77,7 @@ pub fn track(source: &str, start: f64, end: f64, rate: f64, region: Region) -> R
     if info.width == 0 || info.height == 0 {
         return Err(Error::Invalid("the source has no picture".into()));
     }
-    if !(end > start) {
+    if end.is_nan() || start.is_nan() || end <= start {
         return Err(Error::Invalid("the span to track is empty".into()));
     }
     let rate = rate.clamp(2.0, 60.0);
@@ -85,7 +85,15 @@ pub fn track(source: &str, start: f64, end: f64, rate: f64, region: Region) -> R
     let ah = ((info.height as f64 * aw as f64 / info.width as f64).round() as usize).max(16);
 
     let mut child = Command::new("ffmpeg")
-        .args(["-hide_banner", "-v", "error", "-ss", &format!("{start:.4}"), "-i", &info.path])
+        .args([
+            "-hide_banner",
+            "-v",
+            "error",
+            "-ss",
+            &format!("{start:.4}"),
+            "-i",
+            &info.path,
+        ])
         .args([
             "-t",
             &format!("{:.4}", end - start),
@@ -98,8 +106,17 @@ pub fn track(source: &str, start: f64, end: f64, rate: f64, region: Region) -> R
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { Error::NoFfmpeg } else { Error::Io(e) })?;
-    let mut stdout = child.stdout.take().ok_or_else(|| Error::Invalid("ffmpeg gave no output".into()))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::NoFfmpeg
+            } else {
+                Error::Io(e)
+            }
+        })?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| Error::Invalid("ffmpeg gave no output".into()))?;
 
     // Template size in analysis pixels, at least big enough to carry texture.
     let tw = ((region.w * aw as f64).round() as usize).clamp(8, aw / 2) | 1;
@@ -116,13 +133,22 @@ pub fn track(source: &str, start: f64, end: f64, rate: f64, region: Region) -> R
     let mut index = 0usize;
 
     while stdout.read_exact(&mut buf).is_ok() {
-        let frame = Gray { w: aw, h: ah, px: buf.iter().map(|&v| v as f32).collect() };
+        let frame = Gray {
+            w: aw,
+            h: ah,
+            px: buf.iter().map(|&v| v as f32).collect(),
+        };
         let t = start + index as f64 / rate;
         index += 1;
 
         let Some(tpl) = &mut template else {
             template = Some(patch(&frame, cx, cy, tw, th));
-            points.push(TrackPoint { t, x: cx / aw as f64, y: cy / ah as f64, confidence: 1.0 });
+            points.push(TrackPoint {
+                t,
+                x: cx / aw as f64,
+                y: cy / ah as f64,
+                confidence: 1.0,
+            });
             continue;
         };
 
@@ -133,7 +159,12 @@ pub fn track(source: &str, start: f64, end: f64, rate: f64, region: Region) -> R
         }
         cx = best.0.clamp(0.0, aw as f64 - 1.0);
         cy = best.1.clamp(0.0, ah as f64 - 1.0);
-        points.push(TrackPoint { t, x: cx / aw as f64, y: cy / ah as f64, confidence: score });
+        points.push(TrackPoint {
+            t,
+            x: cx / aw as f64,
+            y: cy / ah as f64,
+            confidence: score,
+        });
         // Let a confident match refresh the template a little.
         if score > 0.8 {
             let now = patch(&frame, cx, cy, tw, th);
@@ -145,7 +176,9 @@ pub fn track(source: &str, start: f64, end: f64, rate: f64, region: Region) -> R
     let _ = child.kill();
     let _ = child.wait();
     if points.is_empty() {
-        return Err(Error::Invalid("no frames could be read in that span".into()));
+        return Err(Error::Invalid(
+            "no frames could be read in that span".into(),
+        ));
     }
     Ok(TrackResult { points, lost })
 }
@@ -169,9 +202,19 @@ fn patch(f: &Gray, cx: f64, cy: f64, tw: usize, th: usize) -> Vec<f32> {
     out
 }
 
+/// A template and the statistics every correlation against it needs.
+struct Template<'a> {
+    px: &'a [f32],
+    w: usize,
+    h: usize,
+    mean: f32,
+    norm: f32,
+}
+
 /// Normalised cross-correlation of the template against the frame with the
 /// template centred on integer pixel (cx, cy).
-fn ncc(f: &Gray, tpl: &[f32], tmean: f32, tnorm: f32, tw: usize, th: usize, cx: isize, cy: isize) -> f64 {
+fn ncc(f: &Gray, t: &Template, cx: isize, cy: isize) -> f64 {
+    let (tpl, tmean, tnorm, tw, th) = (t.px, t.mean, t.norm, t.w, t.h);
     let x0 = cx - (tw as isize - 1) / 2;
     let y0 = cy - (th as isize - 1) / 2;
     let n = (tw * th) as f32;
@@ -195,12 +238,31 @@ fn ncc(f: &Gray, tpl: &[f32], tmean: f32, tnorm: f32, tw: usize, th: usize, cx: 
 
 /// Best match near (cx, cy): a stride-2 sweep of the whole window, a stride-1
 /// polish around its winner, then a parabola through the peak's neighbours.
-fn search(f: &Gray, tpl: &[f32], tw: usize, th: usize, cx: f64, cy: f64, r: isize) -> ((f64, f64), f64) {
+fn search(
+    f: &Gray,
+    tpl: &[f32],
+    tw: usize,
+    th: usize,
+    cx: f64,
+    cy: f64,
+    r: isize,
+) -> ((f64, f64), f64) {
     let n = tpl.len() as f32;
     let tmean = tpl.iter().sum::<f32>() / n;
-    let tnorm = tpl.iter().map(|v| (v - tmean) * (v - tmean)).sum::<f32>().sqrt();
+    let tnorm = tpl
+        .iter()
+        .map(|v| (v - tmean) * (v - tmean))
+        .sum::<f32>()
+        .sqrt();
     let (ox, oy) = (cx.round() as isize, cy.round() as isize);
-    let score = |x: isize, y: isize| ncc(f, tpl, tmean, tnorm, tw, th, x, y);
+    let t = Template {
+        px: tpl,
+        w: tw,
+        h: th,
+        mean: tmean,
+        norm: tnorm,
+    };
+    let score = |x: isize, y: isize| ncc(f, &t, x, y);
 
     let mut best = (ox, oy, f64::NEG_INFINITY);
     let mut y = -r;
@@ -227,7 +289,11 @@ fn search(f: &Gray, tpl: &[f32], tw: usize, th: usize, cx: f64, cy: f64, r: isiz
     let (bx, by, peak) = best;
     let refine = |lo: f64, mid: f64, hi: f64| {
         let d = lo - 2.0 * mid + hi;
-        if d.abs() < 1e-9 { 0.0 } else { (0.5 * (lo - hi) / d).clamp(-0.5, 0.5) }
+        if d.abs() < 1e-9 {
+            0.0
+        } else {
+            (0.5 * (lo - hi) / d).clamp(-0.5, 0.5)
+        }
     };
     let sx = refine(score(bx - 1, by), peak, score(bx + 1, by));
     let sy = refine(score(bx, by - 1), peak, score(bx, by + 1));
@@ -245,11 +311,27 @@ mod tests {
             return p;
         }
         let ok = Command::new("ffmpeg")
-            .args(["-y", "-v", "error",
-                "-f", "lavfi", "-i", "testsrc2=size=48x48:rate=25",
-                "-f", "lavfi", "-i", "color=c=0x404040:size=320x180:rate=25",
-                "-filter_complex", "[1][0]overlay=x='40+t*60':y='50+t*20':shortest=1",
-                "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p"])
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=48x48:rate=25",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=0x404040:size=320x180:rate=25",
+                "-filter_complex",
+                "[1][0]overlay=x='40+t*60':y='50+t*20':shortest=1",
+                "-t",
+                "2",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+            ])
             .arg(&p)
             .status()
             .unwrap()
@@ -262,7 +344,12 @@ mod tests {
     fn follows_a_moving_subject() {
         let src = moving_patch();
         // The patch's centre starts at (64, 74) in a 320x180 frame.
-        let region = Region { x: 64.0 / 320.0, y: 74.0 / 180.0, w: 40.0 / 320.0, h: 40.0 / 180.0 };
+        let region = Region {
+            x: 64.0 / 320.0,
+            y: 74.0 / 180.0,
+            w: 40.0 / 320.0,
+            h: 40.0 / 180.0,
+        };
         let r = track(src.to_str().unwrap(), 0.0, 1.5, 10.0, region).unwrap();
         assert!(!r.lost, "lost the subject: {:?}", r.points.last());
         assert!(r.points.len() >= 14, "{} points", r.points.len());
@@ -277,7 +364,12 @@ mod tests {
     fn stops_when_the_subject_is_gone() {
         let src = moving_patch();
         // A patch of flat background has nothing to match.
-        let region = Region { x: 0.9, y: 0.1, w: 0.1, h: 0.15 };
+        let region = Region {
+            x: 0.9,
+            y: 0.1,
+            w: 0.1,
+            h: 0.15,
+        };
         let r = track(src.to_str().unwrap(), 0.0, 1.0, 10.0, region).unwrap();
         assert!(r.lost, "followed featureless ground: {:?}", r.points);
         assert_eq!(r.points.len(), 1, "only the starting point is real");
