@@ -2,7 +2,9 @@
 
 mod db;
 mod sheet;
+mod sync;
 mod timeline;
+mod track;
 mod video;
 
 use db::{Item, Query};
@@ -269,12 +271,24 @@ fn autosave_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, timeline::
         .join("autosave"))
 }
 
+/// The snapshot is written as the editor sent it. Parsing it first proves it
+/// is a project, but writing the typed copy would drop editor-only fields such
+/// as a bypassed effect's switch, and a restore would silently re-enable it.
 #[tauri::command]
 fn autosave(
     app: tauri::AppHandle,
-    project: timeline::Project,
+    project: serde_json::Value,
     item_id: String,
 ) -> Result<String, timeline::Error> {
+    serde_json::from_value::<timeline::Project>(project.clone())?;
+    // The id becomes part of a filename.
+    if item_id.is_empty()
+        || !item_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(timeline::Error::Invalid("invalid item id".into()));
+    }
     let dir = autosave_dir(&app)?;
     timeline::autosave(&project, &item_id, &dir)
 }
@@ -286,8 +300,95 @@ fn autosaves(app: tauri::AppHandle, item_id: String) -> Result<Vec<String>, time
 }
 
 #[tauri::command]
-fn restore_autosave(path: String) -> Result<timeline::Project, timeline::Error> {
-    timeline::restore_autosave(&path)
+fn restore_autosave(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<serde_json::Value, timeline::Error> {
+    // Only snapshots this app wrote may be read back through this command.
+    let dir = autosave_dir(&app)?;
+    let wanted = std::path::Path::new(&path)
+        .canonicalize()
+        .map_err(|e| timeline::Error::Invalid(e.to_string()))?;
+    if !wanted.starts_with(dir.canonicalize().unwrap_or(dir)) {
+        return Err(timeline::Error::Invalid("not an autosave snapshot".into()));
+    }
+    let value: serde_json::Value = timeline::restore_autosave(&path)?;
+    serde_json::from_value::<timeline::Project>(value.clone())?;
+    Ok(value)
+}
+
+#[tauri::command]
+fn export_frame(
+    project: timeline::Project,
+    at: f64,
+    output: String,
+) -> Result<String, timeline::Error> {
+    timeline::export_frame(&project, at, std::path::Path::new(&output))
+}
+
+/// The exact frame at `at`, cached, for the monitor to show while parked on
+/// effects the live preview cannot reproduce.
+#[tauri::command]
+async fn preview_frame(
+    app: tauri::AppHandle,
+    project: timeline::Project,
+    at: f64,
+) -> Result<String, timeline::Error> {
+    let dir = preview_cache_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || timeline::preview_frame(&project, at, &dir))
+        .await
+        .map_err(|e| timeline::Error::Invalid(e.to_string()))?
+}
+
+/// Offsets that line `others` up with `reference` by their audio.
+#[tauri::command]
+async fn audio_sync(
+    reference: String,
+    others: Vec<String>,
+) -> Result<Vec<sync::SyncResult>, timeline::Error> {
+    tauri::async_runtime::spawn_blocking(move || sync::sync(&reference, &others))
+        .await
+        .map_err(|e| timeline::Error::Invalid(e.to_string()))?
+}
+
+/// Follow a region of a source from `start` to `end` (source seconds).
+#[tauri::command]
+async fn track_region(
+    source: String,
+    start: f64,
+    end: f64,
+    rate: f64,
+    region: track::Region,
+) -> Result<track::TrackResult, timeline::Error> {
+    tauri::async_runtime::spawn_blocking(move || track::track(&source, start, end, rate, region))
+        .await
+        .map_err(|e| timeline::Error::Invalid(e.to_string()))?
+}
+
+/// EBU R128 loudness of the finished mix, measured from a real render.
+#[tauri::command]
+async fn measure_loudness(
+    app: tauri::AppHandle,
+    project: timeline::Project,
+) -> Result<timeline::LoudnessReport, timeline::Error> {
+    let dir = preview_cache_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || timeline::measure_loudness(&project, &dir))
+        .await
+        .map_err(|e| timeline::Error::Invalid(e.to_string()))?
+}
+
+#[tauri::command]
+fn audio_peak(source: String, start: f64, end: f64) -> Result<f64, timeline::Error> {
+    timeline::audio_peak(&source, start, end)
+}
+
+/// Which of these paths still point at a file, for offline media detection.
+#[tauri::command]
+fn media_status(paths: Vec<String>) -> Vec<bool> {
+    paths
+        .iter()
+        .map(|p| std::path::Path::new(p).is_file())
+        .collect()
 }
 
 #[tauri::command]
@@ -412,6 +513,13 @@ pub fn run() {
             autosave,
             autosaves,
             restore_autosave,
+            export_frame,
+            preview_frame,
+            measure_loudness,
+            track_region,
+            audio_sync,
+            audio_peak,
+            media_status,
             analyse_stabilisation,
             freeze_frame,
             render_zone,

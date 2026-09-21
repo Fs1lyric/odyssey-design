@@ -15,11 +15,45 @@ export interface Keyframe {
 
 export type Param = number | { keyframes: Keyframe[] };
 
+export type MarkerKind = "comment" | "chapter";
+
 export interface Marker {
   id: string;
   time: number;
   name: string;
   colour: string;
+  comment: string;
+  /** Zero for a point marker; otherwise it spans a range. */
+  duration: number;
+  /** Chapter markers are written into MP4, MOV and MKV exports. */
+  kind: MarkerKind;
+}
+
+/** Essential Graphics text styling for a title card. Mirrors TitleStyle. */
+export interface TitleStyle {
+  align: "left" | "center" | "right";
+  valign: "top" | "middle" | "bottom" | "lower-third";
+  offset_x: number;
+  offset_y: number;
+  stroke_width: number;
+  stroke_color: string;
+  shadow: number;
+  shadow_color: string;
+  box_enabled: boolean;
+  box_color: string;
+  box_padding: number;
+  scroll: "none" | "roll" | "crawl";
+  /** Off gives a transparent card, for text over the tracks beneath. */
+  opaque: boolean;
+}
+
+export function defaultTitleStyle(): TitleStyle {
+  return {
+    align: "center", valign: "middle", offset_x: 0, offset_y: 0,
+    stroke_width: 0, stroke_color: "black", shadow: 0, shadow_color: "black@0.6",
+    box_enabled: false, box_color: "black@0.6", box_padding: 16,
+    scroll: "none", opaque: true,
+  };
 }
 
 export type Source =
@@ -27,10 +61,17 @@ export type Source =
   | { type: "still"; path: string }
   | { type: "adjustment" }
   | { type: "nested"; name: string; project: Project }
-  | { type: "title"; text: string; background: string; size: number; color: string }
-  | { type: "color"; color: string };
+  | { type: "title"; text: string; background: string; size: number; color: string; style: TitleStyle }
+  | { type: "color"; color: string }
+  | { type: "bars" };
 
-export type Effect =
+/** Every effect carries an optional switch. It is editor state: bypassed
+ *  effects are removed by `renderable` before anything reaches ffmpeg. */
+export type Effect = EffectBody & { enabled?: boolean };
+
+export type FadeCurve = "tri" | "qsin" | "exp";
+
+export type EffectBody =
   | { kind: "color"; brightness: Param; contrast: Param; saturation: Param; gamma: Param }
   | { kind: "hue"; degrees: Param }
   | { kind: "blur"; sigma: Param }
@@ -44,7 +85,10 @@ export type Effect =
   | { kind: "chromakey"; color: string; similarity: Param; blend: Param }
   | { kind: "text"; content: string; size: number; color: string; x: Param; y: Param; font: string }
   | { kind: "volume"; level: Param }
-  | { kind: "audiofade"; in_secs: number; out_secs: number }
+  | { kind: "audiofade"; in_secs: number; out_secs: number; curve: FadeCurve }
+  | { kind: "mask"; shape: "rectangle" | "ellipse"; x: Param; y: Param; width: Param; height: Param;
+      feather: Param; invert: boolean }
+  | { kind: "tint"; black: string; white: string; amount: number }
   | { kind: "highpass"; frequency: Param }
   | { kind: "lowpass"; frequency: Param }
   | { kind: "frei0r"; name: string; params: Param[] }
@@ -304,7 +348,35 @@ export interface Clip {
   motion: Motion;
   blend: BlendMode;
   transition_in: Transition | null;
+  /** Empty means the source name. */
+  name: string;
+  label: string;
+  group: string | null;
+  link: string | null;
+  interpolation: Interpolation;
+  /** Set on a clip cut from a multicam group: which group and which angle
+   *  it currently shows. Editor state; the renderer sees a media clip. */
+  multicam?: { group: string; angle: number };
 }
+
+/** One camera of a multicam group. `offset` is what to add to a time on the
+ *  group's reference angle to find the same moment in this source. */
+export interface MulticamAngle {
+  path: string;
+  name: string;
+  offset: number;
+  duration: number;
+}
+
+/** Sources recorded together, synced by their audio. */
+export interface MulticamGroup {
+  id: string;
+  name: string;
+  angles: MulticamAngle[];
+}
+
+/** How frames are made for a speed change. Premiere's Time Interpolation. */
+export type Interpolation = "sampling" | "blending" | "optical";
 
 export type TransitionKind =
   | "dissolve" | "diptoblack" | "diptowhite"
@@ -317,7 +389,15 @@ export type TransitionKind =
 export interface Transition {
   kind: TransitionKind;
   duration: number;
+  /** On an audio track the transition is a crossfade of this shape. */
+  curve: FadeCurve;
 }
+
+export const FADE_CURVES: Array<[FadeCurve, string]> = [
+  ["qsin", "Constant power"],
+  ["tri", "Constant gain"],
+  ["exp", "Exponential fade"],
+];
 
 export const TRANSITION_LABELS: Array<[TransitionKind, string]> = [
   ["dissolve", "Cross dissolve"],
@@ -366,6 +446,13 @@ export interface Track {
   blend: BlendMode;
   targeted: boolean;
   duck_under: string | null;
+  duck_threshold: number;
+  duck_ratio: number;
+  duck_attack: number;
+  duck_release: number;
+  sync_lock: boolean;
+  /** Stereo balance, -1 left to 1 right. */
+  pan: number;
 }
 
 export interface BinItem {
@@ -411,6 +498,9 @@ export interface Project {
   fps: number;
   sample_rate: number;
   background: string;
+  master_volume: number;
+  /** Multicam groups, editor state that the renderer never needs. */
+  multicam?: MulticamGroup[];
 }
 
 export interface PreviewChunk {
@@ -455,6 +545,11 @@ export interface RenderProfile {
   video_bitrate: string | null;
   audio_bitrate: string;
   preset: string;
+  /** Output height when it differs from the sequence. */
+  height: number | null;
+  /** Integrated loudness target in LUFS. */
+  loudnorm: number | null;
+  timecode: boolean;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -474,6 +569,7 @@ export function emptyProject(): Project {
     fps: 30,
     sample_rate: 48000,
     background: "black",
+    master_volume: 1,
   };
 }
 
@@ -492,6 +588,12 @@ export function newTrack(name: string, kind: "video" | "audio"): Track {
     blend: "normal",
     targeted: false,
     duck_under: null,
+    duck_threshold: 0.05,
+    duck_ratio: 8,
+    duck_attack: 20,
+    duck_release: 300,
+    sync_lock: true,
+    pan: 0,
   };
 }
 
@@ -711,6 +813,33 @@ export function resolveCollision(track: Track, clip: Clip) {
   }
 }
 
+/** The span of reference time every angle of a group has material for. */
+export function multicamSpan(group: MulticamGroup): [number, number] {
+  const lo = Math.max(...group.angles.map((a) => -a.offset), 0);
+  const hi = Math.min(...group.angles.map((a) => a.duration - a.offset));
+  return [lo, hi];
+}
+
+/** Show a different angle in a multicam clip, keeping its place and length
+ *  on the timeline: the same moment of the take, seen from another camera.
+ *  Refuses (false) if that camera was not rolling for the whole clip. */
+export function switchAngle(clip: Clip, group: MulticamGroup, angle: number): boolean {
+  const cur = clip.multicam;
+  const to = group.angles[angle];
+  if (!cur || cur.group !== group.id || !to) return false;
+  const from = group.angles[cur.angle];
+  if (!from) return false;
+  const shift = to.offset - from.offset;
+  const inP = clip.in_point + shift;
+  const outP = clip.out_point + shift;
+  if (inP < -1e-3 || outP > to.duration + 1e-3) return false;
+  clip.in_point = Math.max(0, inP);
+  clip.out_point = Math.min(to.duration, outP);
+  clip.source = { type: "media", path: to.path };
+  clip.multicam = { group: group.id, angle };
+  return true;
+}
+
 /** Split a clip at an absolute timeline position. Returns the new right half. */
 export function splitClip(track: Track, clip: Clip, at: number): Clip | null {
   const local = at - clip.start;
@@ -796,7 +925,9 @@ export const EFFECT_CATALOGUE: Array<{ label: string; group: string; make: () =>
   { label: "Crop", group: "Geometry", make: () => ({ kind: "crop", x: 0, y: 0, width: 1280, height: 720 }) },
   { label: "Text overlay", group: "Text", make: () => ({ kind: "text", content: "Text", size: 48, color: "white", x: 64, y: 64, font: "" }) },
   { label: "Volume", group: "Audio", make: () => ({ kind: "volume", level: 1 }) },
-  { label: "Audio fade", group: "Audio", make: () => ({ kind: "audiofade", in_secs: 0.5, out_secs: 0.5 }) },
+  { label: "Audio fade", group: "Audio", make: () => ({ kind: "audiofade", in_secs: 0.5, out_secs: 0.5, curve: "qsin" }) },
+  { label: "Mask", group: "Composite", make: () => ({ kind: "mask", shape: "ellipse", x: 50, y: 50, width: 60, height: 60, feather: 30, invert: false }) },
+  { label: "Tint", group: "Colour", make: () => ({ kind: "tint", black: "#000000", white: "#ffffff", amount: 1 }) },
   { label: "High-pass", group: "Audio", make: () => ({ kind: "highpass", frequency: 200 }) },
   { label: "Low-pass", group: "Audio", make: () => ({ kind: "lowpass", frequency: 3000 }) },
   { label: "Loudness", group: "Audio", make: () => ({ kind: "loudness", target: -16 }) },
@@ -945,7 +1076,7 @@ export const EFFECT_CATALOGUE: Array<{ label: string; group: string; make: () =>
  *   - static:     the effect has no animatable parameters */
 export const ANIMATION_ROUTE: Record<string, "expression" | "command" | "stacked" | "static"> = {
   color: "expression", crop: "expression", rotate: "expression", volume: "expression",
-  text: "expression", vignette: "expression",
+  text: "expression", vignette: "expression", mask: "expression", tint: "static",
   blur: "command", hue: "command", chromakey: "command", opacity: "command",
   highpass: "command", lowpass: "command", transform: "command",
   sharpen: "stacked", frei0r: "stacked",
@@ -990,6 +1121,13 @@ export const EFFECT_PARAMS: Record<string, Array<{ key: string; label: string; m
   sharpen: [{ key: "amount", label: "Amount", min: 0, max: 5, step: 0.1, keyframable: true }],
   opacity: [{ key: "level", label: "Opacity", min: 0, max: 1, step: 0.01, keyframable: true }],
   vignette: [{ key: "angle", label: "Angle", min: 0, max: 1.5, step: 0.01, keyframable: true }],
+  mask: [
+    { key: "x", label: "Centre X %", min: 0, max: 100, step: 0.5, keyframable: true },
+    { key: "y", label: "Centre Y %", min: 0, max: 100, step: 0.5, keyframable: true },
+    { key: "width", label: "Width %", min: 1, max: 200, step: 0.5, keyframable: true },
+    { key: "height", label: "Height %", min: 1, max: 200, step: 0.5, keyframable: true },
+    { key: "feather", label: "Feather px", min: 0, max: 400, step: 1, keyframable: true },
+  ],
   chromakey: [
     { key: "similarity", label: "Similarity", min: 0, max: 1, step: 0.01, keyframable: true },
     { key: "blend", label: "Blend", min: 0, max: 1, step: 0.01, keyframable: true },
@@ -1047,3 +1185,120 @@ export const EFFECT_PARAMS: Record<string, Array<{ key: string; label: string; m
     { key: "gain_b", label: "Highlights B", min: -1, max: 1, step: 0.01, keyframable: true },
   ],
 };
+
+/** Every easing, labelled, in the order the keyframe graph offers them. */
+export const EASING_LABELS: Array<[Easing, string]> = [
+  ["linear", "Linear"], ["hold", "Hold"],
+  ["easein", "Ease in"], ["easeout", "Ease out"], ["easeinout", "Ease in and out"],
+  ["sinein", "Sine in"], ["sineout", "Sine out"],
+  ["cubicin", "Cubic in"], ["cubicout", "Cubic out"], ["cubicinout", "Cubic in and out"],
+  ["quartin", "Quart in"], ["quartout", "Quart out"], ["quintout", "Quint out"],
+  ["expoin", "Expo in"], ["expoout", "Expo out"], ["expoinout", "Expo in and out"],
+  ["circin", "Circ in"], ["circout", "Circ out"], ["circinout", "Circ in and out"],
+  ["backin", "Back in"], ["backout", "Back out"], ["backinout", "Back in and out"],
+  ["elasticin", "Elastic in"], ["elasticout", "Elastic out"], ["elasticinout", "Elastic in and out"],
+  ["bouncein", "Bounce in"], ["bounceout", "Bounce out"], ["bounceinout", "Bounce in and out"],
+];
+
+/** The project as the renderer should see it. Bypassed effects are editor
+ *  state, so they are removed here, once, rather than taught to Rust; every
+ *  API call that hands a project to ffmpeg goes through this. Nested
+ *  sequences are cleaned too, since they render with the same graph. */
+export function renderable(project: Project): Project {
+  const copy = structuredClone(project);
+  const clean = (p: Project) => {
+    for (const track of p.tracks) {
+      for (const clip of track.clips) {
+        clip.effects = clip.effects.filter((e) => e.enabled !== false);
+        if (clip.source.type === "nested") clean(clip.source.project);
+      }
+    }
+  };
+  clean(copy);
+  return copy;
+}
+
+/** The timeline as the renderer composites it, mirroring `apply_transitions`
+ *  in timeline.rs: two clips butted together on one track never overlap, so
+ *  the incoming clip is pulled back by the transition length, consuming its
+ *  head handle, and the outgoing tail is extended to play underneath. Where a
+ *  clip has no handle the transition shortens, exactly as the export does.
+ *  The preview composites this rather than the edited timeline, so a dissolve
+ *  looks the same in the monitor as in the file. */
+export function applyTransitions(project: Project): Project {
+  const out = structuredClone(project);
+  for (const track of out.tracks) {
+    const ordered = [...track.clips].sort((a, b) => a.start - b.start);
+    for (let i = 1; i < ordered.length; i++) {
+      const prev = ordered[i - 1];
+      const next = ordered[i];
+      const t = next.transition_in;
+      if (!t) continue;
+      if (Math.abs(next.start - clipEnd(prev)) > 0.001) continue;
+      const speed = isAnimated(next.speed) ? 1 : Math.max(0.01, Math.abs(paramAt(next.speed, 0)));
+      const outSpeed = isAnimated(prev.speed) ? 1 : Math.max(0.01, Math.abs(paramAt(prev.speed, 0)));
+      const overlap = Math.max(0, Math.min(t.duration, next.in_point / speed, clipDuration(prev)));
+      if (overlap <= 0.001) continue;
+      next.start -= overlap;
+      next.in_point = Math.max(0, next.in_point - overlap * speed);
+      next.transition_in = { ...t, duration: overlap };
+      prev.out_point += overlap * outSpeed;
+    }
+  }
+  return out;
+}
+
+/** Fill fields that older saved projects predate, in place. */
+export function migrateProject(p: Project): Project {
+  p.master_volume ??= 1;
+  for (const m of p.markers) {
+    m.comment ??= "";
+    m.duration ??= 0;
+    m.kind ??= "comment";
+  }
+  for (const t of p.tracks) {
+    t.opacity ??= 1;
+    t.blend ??= "normal";
+    t.targeted ??= false;
+    t.duck_under ??= null;
+    t.duck_threshold ??= 0.05;
+    t.duck_ratio ??= 8;
+    t.duck_attack ??= 20;
+    t.duck_release ??= 300;
+    t.sync_lock ??= true;
+    t.pan ??= 0;
+    for (const c of t.clips) {
+      c.motion ??= defaultMotion();
+      c.blend ??= "normal";
+      c.channels ??= [];
+      c.preserve_pitch ??= true;
+      c.transition_in ??= null;
+      if (c.transition_in) c.transition_in.curve ??= "qsin";
+      c.name ??= "";
+      c.label ??= "";
+      c.group ??= null;
+      c.link ??= null;
+      c.interpolation ??= "sampling";
+      if (c.source.type === "title") c.source.style = { ...defaultTitleStyle(), ...(c.source.style ?? {}) };
+      if (c.source.type === "nested") migrateProject(c.source.project);
+      for (const e of c.effects) {
+        if (e.kind === "audiofade") e.curve ??= "tri";
+      }
+    }
+  }
+  return p;
+}
+
+/** A fresh clip with every field at its default. */
+export function makeClip(source: Source, start: number, outPoint: number, inPoint = 0): Clip {
+  return {
+    id: crypto.randomUUID(),
+    source,
+    start,
+    in_point: inPoint,
+    out_point: outPoint,
+    speed: 1, reverse: false, gain: 1, muted: false, effects: [],
+    motion: defaultMotion(), blend: "normal", channels: [], preserve_pitch: true, transition_in: null,
+    name: "", label: "", group: null, link: null, interpolation: "sampling",
+  };
+}

@@ -150,6 +150,12 @@ impl Param {
     /// Compile to an ffmpeg expression in `t` (seconds within the clip).
     /// Produces a nested if() chain, one segment per keyframe interval.
     pub fn to_expr(&self) -> String {
+        self.to_expr_in("t")
+    }
+
+    /// The same curve in another time variable. `geq` spells time `T`, and
+    /// rewriting `t` after the fact would also rewrite the `t` inside `lt(`.
+    pub fn to_expr_in(&self, var: &str) -> String {
         match self {
             Param::Static(v) => format!("{v:.6}"),
             Param::Animated { keyframes } => {
@@ -176,14 +182,17 @@ impl Param {
                         format!("{:.6}", a.value)
                     } else {
                         // Normalised progress within this segment.
-                        let p = format!("((t-{:.6})/{:.6})", a.time, span);
+                        let p = format!("(({var}-{:.6})/{:.6})", a.time, span);
                         let eased = ease_expr(&p, a.easing);
                         format!("({:.6}+({:.6})*{})", a.value, b.value - a.value, eased)
                     };
-                    expr = format!("if(lt(t,{:.6}),{},{})", b.time, seg, expr);
+                    expr = format!("if(lt({var},{:.6}),{},{})", b.time, seg, expr);
                 }
                 // Before the first keyframe, hold its value.
-                format!("if(lt(t,{:.6}),{:.6},{})", kf[0].time, kf[0].value, expr)
+                format!(
+                    "if(lt({var},{:.6}),{:.6},{})",
+                    kf[0].time, kf[0].value, expr
+                )
             }
         }
     }
@@ -592,6 +601,9 @@ pub enum Effect {
     },
     /// Audio fades in seconds.
     AudioFade {
+        /// `tri` is constant gain, `qsin` constant power, `exp` exponential.
+        #[serde(default = "d_fade_curve")]
+        curve: String,
         #[serde(default)]
         in_secs: f64,
         #[serde(default)]
@@ -1268,6 +1280,35 @@ pub enum Effect {
         #[serde(default = "p_zero")]
         mode: Param,
     },
+    /// Premiere's opacity mask: a rectangle or ellipse, in percent of the
+    /// clip's own picture, with a feathered edge in pixels. Everything outside
+    /// the shape goes transparent, or everything inside when inverted.
+    Mask {
+        #[serde(default = "d_mask_shape")]
+        shape: String,
+        #[serde(default = "p_fifty")]
+        x: Param,
+        #[serde(default = "p_fifty")]
+        y: Param,
+        #[serde(default = "p_fifty")]
+        width: Param,
+        #[serde(default = "p_fifty")]
+        height: Param,
+        #[serde(default = "p_twenty")]
+        feather: Param,
+        #[serde(default)]
+        invert: bool,
+    },
+    /// Premiere's Tint: shadows map to one colour and highlights to another,
+    /// mixed with the original by `amount`.
+    Tint {
+        #[serde(default = "d_black_string")]
+        black: String,
+        #[serde(default = "d_white")]
+        white: String,
+        #[serde(default = "one_f")]
+        amount: f64,
+    },
     /// Any installed frei0r plugin. This is how the effect count reaches the
     /// hundreds: the same plugin library Kdenlive draws on. Parameters are
     /// frei0r's own normalised 0..1 values, in the plugin's declared order.
@@ -1280,6 +1321,21 @@ pub enum Effect {
 
 fn p_zero() -> Param {
     Param::Static(0.0)
+}
+fn p_fifty() -> Param {
+    Param::Static(50.0)
+}
+fn p_twenty() -> Param {
+    Param::Static(20.0)
+}
+fn d_mask_shape() -> String {
+    "ellipse".into()
+}
+fn d_black_string() -> String {
+    "black".into()
+}
+fn d_fade_curve() -> String {
+    "tri".into()
 }
 fn p_one() -> Param {
     Param::Static(1.0)
@@ -1443,6 +1499,8 @@ impl Effect {
             | Effect::Lowpass { .. }
             | Effect::Transform { .. } => "command",
             Effect::Sharpen { .. } | Effect::Frei0r { .. } => "stacked",
+            Effect::Mask { .. } => "expression",
+            Effect::Tint { .. } => "static",
             Effect::Fade { .. }
             | Effect::AudioFade { .. }
             | Effect::Curves { .. }
@@ -1691,16 +1749,67 @@ impl Effect {
                 }
                 Compiled::f(f)
             }
-            Effect::AudioFade { in_secs, out_secs } => {
+            Effect::AudioFade { in_secs, out_secs, curve } => {
+                let curve = sanitise_curve(curve);
                 let mut out = Vec::new();
                 if *in_secs > 0.0 {
-                    out.push(format!("afade=t=in:st=0:d={in_secs:.4}"));
+                    out.push(format!("afade=t=in:st=0:d={in_secs:.4}:curve={curve}"));
                 }
                 if *out_secs > 0.0 {
                     let st = (dur - out_secs).max(0.0);
-                    out.push(format!("afade=t=out:st={st:.4}:d={out_secs:.4}"));
+                    out.push(format!("afade=t=out:st={st:.4}:d={out_secs:.4}:curve={curve}"));
                 }
                 Compiled::many(out)
+            }
+            Effect::Mask { shape, x, y, width, height, feather, invert } => {
+                // geq spells time T. Percentages are of the layer being masked,
+                // so a mask follows the picture whatever its motion.
+                let e = |p: &Param| p.to_expr_in("T");
+                let (cx, cy) = (format!("(W*({})/100)", e(x)), format!("(H*({})/100)", e(y)));
+                let (hw, hh) = (
+                    format!("max(1,W*({})/200)", e(width)),
+                    format!("max(1,H*({})/200)", e(height)),
+                );
+                let f = format!("max(0.5,{})", e(feather));
+                // Coverage: 1 inside, falling to 0 across the feather outside.
+                let inside = if shape == "rectangle" {
+                    format!(
+                        "clip(1-hypot(max(abs(X-{cx})-{hw},0),max(abs(Y-{cy})-{hh},0))/{f},0,1)"
+                    )
+                } else {
+                    format!(
+                        "clip(1-(hypot((X-{cx})/{hw},(Y-{cy})/{hh})-1)*min({hw},{hh})/{f},0,1)"
+                    )
+                };
+                let cover = if *invert { format!("(1-{inside})") } else { inside };
+                Compiled::many(vec![
+                    "format=yuva420p".into(),
+                    format!("geq=lum='p(X,Y)':a='alpha(X,Y)*{cover}'"),
+                ])
+            }
+            Effect::Tint { black, white, amount } => {
+                // out = (1-a)*src + a*(black + (white-black)*luma). That is linear
+                // in R, G and B plus a constant, so a channel mixer carries the
+                // slope and a LUT adds the offset.
+                let a = amount.clamp(0.0, 1.0);
+                let (b, w) = (parse_rgb(black, (0, 0, 0)), parse_rgb(white, (255, 255, 255)));
+                let luma = [0.299, 0.587, 0.114];
+                let mut mix = Vec::new();
+                let mut offsets = Vec::new();
+                for (ch, (lo, hi)) in ["r", "g", "b"].iter().zip([(b.0, w.0), (b.1, w.1), (b.2, w.2)]) {
+                    let k = (hi as f64 - lo as f64) / 255.0;
+                    for (i, src) in ["r", "g", "b"].iter().enumerate() {
+                        let own = if ch == src { 1.0 - a } else { 0.0 };
+                        let v = (own + a * k * luma[i]).clamp(-2.0, 2.0);
+                        mix.push(format!("{ch}{src}={v:.5}"));
+                    }
+                    offsets.push(format!("{ch}='clip(val+{:.3},0,255)'", a * lo as f64));
+                }
+                Compiled::many(vec![
+                    "format=rgb24".into(),
+                    format!("colorchannelmixer={}", mix.join(":")),
+                    format!("lutrgb={}", offsets.join(":")),
+                ])
             }
             Effect::Highpass { frequency } => {
                 let mut c = Compiled::f(format!("highpass=f={}", first(frequency)));
@@ -1874,11 +1983,12 @@ colorchannelmixer=rr='{expr}':gg='{expr}':bb='{expr}'"))
             }
             Effect::Reframe { aspect } => {
                 let a = aspect.clamp(0.2, 5.0);
-                // Fit inside the target box, then pad out to it.
-                Compiled::many(vec![
-                    format!("scale='if(gt(a,{a:.5}),iw,ih*{a:.5})':'if(gt(a,{a:.5}),iw/{a:.5},ih)'"),
-                    format!("pad='max(iw,ih*{a:.5})':'max(ih,iw/{a:.5})':(ow-iw)/2:(oh-ih)/2:color=black@0"),
-                ])
+                // Pad out to the smallest box of the target aspect that holds
+                // the picture. Scaling to that box first would stretch the
+                // picture to the new aspect instead of framing it.
+                Compiled::f(format!(
+                    "pad='max(iw,ih*{a:.5})':'max(ih,iw/{a:.5})':(ow-iw)/2:(oh-ih)/2:color=black@0"
+                ))
             }
             Effect::Posterize { levels } => {
                 // Quantise each channel into N steps by flooring to a step size.
@@ -2016,16 +2126,23 @@ b='floor(val/(256/max(2,{n})))*(256/max(2,{n}))'"
             ),
             Effect::Scanlines { amount } => {
                 // Darken every other row. Chroma is passed through untouched.
+                // geq reads lum/cb/cr only on YUV input; on RGB (a still, a
+                // PNG sequence) it ignores them and paints black, so the
+                // format is pinned first.
                 let a = amount.first().clamp(0.0, 1.0);
-                Compiled::f(format!(
-                    "geq=lum='p(X,Y)*(1-{a:.4}*mod(Y,2))':cb='p(X,Y)':cr='p(X,Y)'"
-                ))
+                Compiled::many(vec![
+                    "format=yuva420p".into(),
+                    format!("geq=lum='p(X,Y)*(1-{a:.4}*mod(Y,2))':cb='p(X,Y)':cr='p(X,Y)':a='alpha(X,Y)'"),
+                ])
             }
-            Effect::Mirror => Compiled::f(
+            // YUV pinned for geq, as for Scanlines above.
+            Effect::Mirror => Compiled::many(vec![
+                "format=yuva420p".into(),
                 "geq=lum='p(if(lt(X,W/2),X,W-1-X),Y)':\
-cb='p(if(lt(X,W/2),X,W-1-X),Y)':cr='p(if(lt(X,W/2),X,W-1-X),Y)'"
+cb='p(if(lt(X,W/2),X,W-1-X),Y)':cr='p(if(lt(X,W/2),X,W-1-X),Y)':\
+a='alpha(if(lt(X,W/2),X,W-1-X),Y)'"
                     .into(),
-            ),
+            ]),
 
             // ---- added audio ----
             Effect::Bass { gain, freq } => Compiled::f(format!(
@@ -2237,6 +2354,105 @@ fn sanitise_plugin(name: &str) -> String {
     }
 }
 
+/// The drawtext for a title card, honouring its Essential Graphics styling.
+///
+/// Rolling and crawling titles travel the full frame plus their own extent
+/// over the clip, so the last line leaves exactly as the clip ends.
+fn title_drawtext(text: &str, size: f64, color: &str, style: &TitleStyle, dur: f64) -> String {
+    let (ox, oy) = (style.offset_x, style.offset_y);
+    let d = dur.max(0.04);
+    let x = match (style.scroll.as_str(), style.align.as_str()) {
+        ("crawl", _) => format!("w-(w+text_w)*t/{d:.4}+({ox:.2})"),
+        (_, "left") => format!("w*0.06+({ox:.2})"),
+        (_, "right") => format!("w-text_w-w*0.06+({ox:.2})"),
+        _ => format!("(w-text_w)/2+({ox:.2})"),
+    };
+    let y = match (style.scroll.as_str(), style.valign.as_str()) {
+        ("roll", _) => format!("h-(h+text_h)*t/{d:.4}+({oy:.2})"),
+        (_, "top") => format!("h*0.08+({oy:.2})"),
+        (_, "bottom") => format!("h-text_h-h*0.08+({oy:.2})"),
+        (_, "lower-third") => format!("h*0.72+({oy:.2})"),
+        _ => format!("(h-text_h)/2+({oy:.2})"),
+    };
+    let mut f = format!(
+        "drawtext=text='{}':fontsize={:.0}:fontcolor={}:x='{x}':y='{y}'",
+        escape_drawtext(text),
+        size.clamp(4.0, 1000.0),
+        sanitise_color(color)
+    );
+    if style.stroke_width > 0.0 {
+        f.push_str(&format!(
+            ":borderw={:.0}:bordercolor={}",
+            style.stroke_width.clamp(0.0, 64.0),
+            sanitise_color(&style.stroke_color)
+        ));
+    }
+    if style.shadow > 0.0 {
+        let o = style.shadow.clamp(0.0, 64.0);
+        f.push_str(&format!(
+            ":shadowx={o:.0}:shadowy={o:.0}:shadowcolor={}",
+            sanitise_color(&style.shadow_color)
+        ));
+    }
+    if style.box_enabled {
+        f.push_str(&format!(
+            ":box=1:boxcolor={}:boxborderw={:.0}",
+            sanitise_color(&style.box_color),
+            style.box_padding.clamp(0.0, 200.0)
+        ));
+    }
+    f
+}
+
+/// `afade` curve names are a closed set; the three Premiere offers map to
+/// constant gain, constant power and exponential.
+fn sanitise_curve(c: &str) -> &'static str {
+    match c {
+        "qsin" => "qsin",
+        "exp" => "exp",
+        _ => "tri",
+    }
+}
+
+/// `#rrggbb`, `0xrrggbb` or an HTML colour name to bytes. Anything else is
+/// the fallback, so a typo cannot reach the filter string.
+fn parse_rgb(c: &str, fallback: (u8, u8, u8)) -> (u8, u8, u8) {
+    // ffmpeg colours may carry an @alpha suffix; Tint has no use for it.
+    let c = c.trim().split('@').next().unwrap_or("").to_ascii_lowercase();
+    // The HTML named colours, which are ffmpeg's values for the same names.
+    // Every other effect hands names straight to ffmpeg; Tint does its own
+    // arithmetic, so without this table a name quietly became the fallback.
+    let named = match c.as_str() {
+        "black" => Some((0, 0, 0)),
+        "white" => Some((255, 255, 255)),
+        "red" => Some((255, 0, 0)),
+        "lime" => Some((0, 255, 0)),
+        "green" => Some((0, 128, 0)),
+        "blue" => Some((0, 0, 255)),
+        "yellow" => Some((255, 255, 0)),
+        "cyan" | "aqua" => Some((0, 255, 255)),
+        "magenta" | "fuchsia" => Some((255, 0, 255)),
+        "silver" => Some((192, 192, 192)),
+        "gray" | "grey" => Some((128, 128, 128)),
+        "maroon" => Some((128, 0, 0)),
+        "olive" => Some((128, 128, 0)),
+        "purple" => Some((128, 0, 128)),
+        "teal" => Some((0, 128, 128)),
+        "navy" => Some((0, 0, 128)),
+        "orange" => Some((255, 165, 0)),
+        _ => None,
+    };
+    if let Some(rgb) = named {
+        return rgb;
+    }
+    let hex = c.trim_start_matches('#').trim_start_matches("0x");
+    if hex.len() == 6 && hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0);
+        return (byte(0), byte(2), byte(4));
+    }
+    fallback
+}
+
 /// Colours reach an ffmpeg filter string, so restrict them to names and hex.
 fn sanitise_color(c: &str) -> String {
     let ok = c
@@ -2254,7 +2470,10 @@ fn escape_drawtext(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('\'', "\u{2019}")
         .replace(':', "\\:")
-        .replace('%', "\\%")
+        // Two levels read this: the filter option parser takes one backslash
+        // and drawtext's own %{...} expansion needs the other. A single one
+        // left a bare '%' that failed the whole render with "Stray %".
+        .replace('%', "\\\\%")
         .replace('\n', "\\n")
 }
 
@@ -2274,7 +2493,16 @@ pub enum Source {
         size: f64,
         #[serde(default = "d_white")]
         color: String,
+        /// The rest is Premiere's Essential Graphics text styling. Every field
+        /// defaults, so a title saved before these existed renders unchanged.
+        /// Boxed: this is by far the largest thing a Source can hold, and
+        /// every clip carries a Source whether or not it is a title. Box<T>
+        /// serialises exactly as T, so saved projects are unaffected.
+        #[serde(default)]
+        style: Box<TitleStyle>,
     },
+    /// SMPTE HD colour bars with a 1 kHz reference tone at -20 dBFS.
+    Bars,
     /// A solid colour card, useful for gaps, flashes and backgrounds.
     Color { color: String },
     /// A still image held for the clip's duration. This is how a freeze frame
@@ -2291,6 +2519,83 @@ pub enum Source {
 
 fn d_black() -> String {
     "black".into()
+}
+
+/// Text styling for a title card.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TitleStyle {
+    /// `left`, `center` or `right`.
+    #[serde(default = "d_center")]
+    pub align: String,
+    /// `top`, `middle`, `bottom` or `lower-third`.
+    #[serde(default = "d_middle")]
+    pub valign: String,
+    /// Nudges from the aligned position, in project pixels.
+    #[serde(default)]
+    pub offset_x: f64,
+    #[serde(default)]
+    pub offset_y: f64,
+    #[serde(default)]
+    pub stroke_width: f64,
+    #[serde(default = "d_black")]
+    pub stroke_color: String,
+    #[serde(default)]
+    pub shadow: f64,
+    #[serde(default = "d_shadow_colour")]
+    pub shadow_color: String,
+    /// A filled box behind the text, the way a lower third sits on a band.
+    #[serde(default)]
+    pub box_enabled: bool,
+    #[serde(default = "d_box_colour")]
+    pub box_color: String,
+    #[serde(default = "d_box_pad")]
+    pub box_padding: f64,
+    /// `none`, `roll` (credits, bottom to top) or `crawl` (right to left).
+    #[serde(default = "d_none")]
+    pub scroll: String,
+    /// Paint the background colour. Off gives a transparent title over the
+    /// tracks beneath, which is what a lower third needs.
+    #[serde(default = "yes")]
+    pub opaque: bool,
+}
+
+impl Default for TitleStyle {
+    fn default() -> Self {
+        TitleStyle {
+            align: d_center(),
+            valign: d_middle(),
+            offset_x: 0.0,
+            offset_y: 0.0,
+            stroke_width: 0.0,
+            stroke_color: d_black(),
+            shadow: 0.0,
+            shadow_color: d_shadow_colour(),
+            box_enabled: false,
+            box_color: d_box_colour(),
+            box_padding: d_box_pad(),
+            scroll: d_none(),
+            opaque: true,
+        }
+    }
+}
+
+fn d_center() -> String {
+    "center".into()
+}
+fn d_middle() -> String {
+    "middle".into()
+}
+fn d_none() -> String {
+    "none".into()
+}
+fn d_shadow_colour() -> String {
+    "black@0.6".into()
+}
+fn d_box_colour() -> String {
+    "black@0.6".into()
+}
+fn d_box_pad() -> f64 {
+    16.0
 }
 
 /// Intrinsic clip motion, the way Premiere gives every clip a Motion section.
@@ -2579,6 +2884,14 @@ pub struct Transition {
     pub kind: TransitionKind,
     #[serde(default = "d_transition")]
     pub duration: f64,
+    /// On an audio track a transition is a crossfade, and this is its shape:
+    /// `tri` constant gain, `qsin` constant power, `exp` exponential.
+    #[serde(default = "d_crossfade_curve")]
+    pub curve: String,
+}
+
+fn d_crossfade_curve() -> String {
+    "qsin".into()
 }
 
 fn d_transition() -> f64 {
@@ -2624,6 +2937,30 @@ pub struct Clip {
     pub blend: BlendMode,
     #[serde(default)]
     pub transition_in: Option<Transition>,
+    /// A name of the user's choosing. Empty means the source name.
+    #[serde(default)]
+    pub name: String,
+    /// A colour label, as Premiere's clip labels work. Never rendered.
+    #[serde(default)]
+    pub label: String,
+    /// Clips sharing a group id select and move together.
+    #[serde(default)]
+    pub group: Option<String>,
+    /// Linked audio and video: the pieces of one recording, kept in step.
+    #[serde(default)]
+    pub link: Option<String>,
+    /// How frames are made when speed is not 1: `sampling` repeats or drops
+    /// them, `blending` mixes neighbours, `optical` synthesises motion.
+    #[serde(default = "d_interpolation")]
+    pub interpolation: String,
+    /// Set by `apply_transitions` on the outgoing side of an audio crossfade,
+    /// so its tail fades while the incoming head rises. Never saved.
+    #[serde(skip)]
+    pub tail_fade: Option<(f64, String)>,
+}
+
+fn d_interpolation() -> String {
+    "sampling".into()
 }
 
 fn one_f() -> f64 {
@@ -2793,6 +3130,13 @@ pub struct Track {
     pub duck_attack: f64,
     #[serde(default = "d_duck_release")]
     pub duck_release: f64,
+    /// When set, inserts and extracts on other tracks move this one too, so
+    /// its clips stay in sync with the edit.
+    #[serde(default = "yes")]
+    pub sync_lock: bool,
+    /// Stereo balance, -1 full left to 1 full right.
+    #[serde(default)]
+    pub pan: f64,
 }
 
 fn d_duck_threshold() -> f64 {
@@ -2873,6 +3217,18 @@ pub struct Marker {
     pub name: String,
     #[serde(default = "d_marker_colour")]
     pub colour: String,
+    #[serde(default)]
+    pub comment: String,
+    /// Zero for a point marker; otherwise it spans a range.
+    #[serde(default)]
+    pub duration: f64,
+    /// `comment` or `chapter`. Chapter markers are written into the export.
+    #[serde(default = "d_marker_kind")]
+    pub kind: String,
+}
+
+fn d_marker_kind() -> String {
+    "comment".into()
 }
 
 fn d_marker_colour() -> String {
@@ -2910,6 +3266,9 @@ pub struct Project {
     pub sample_rate: u32,
     #[serde(default = "d_bg")]
     pub background: String,
+    /// The master bus fader, applied to the final mix.
+    #[serde(default = "one_f")]
+    pub master_volume: f64,
 }
 
 fn d_sub_size() -> f64 {
@@ -2947,6 +3306,7 @@ impl Default for Project {
             fps: 30,
             sample_rate: 48000,
             background: "black".into(),
+            master_volume: 1.0,
         }
     }
 }
@@ -3031,6 +3391,16 @@ pub struct RenderProfile {
     pub audio_bitrate: String,
     #[serde(default = "d_preset")]
     pub preset: String,
+    /// Output height when it differs from the sequence; width follows the
+    /// aspect ratio. None renders at sequence size.
+    #[serde(default)]
+    pub height: Option<u32>,
+    /// Integrated loudness target in LUFS, applied to the final mix.
+    #[serde(default)]
+    pub loudnorm: Option<f64>,
+    /// Burn a running timecode into the picture.
+    #[serde(default)]
+    pub timecode: bool,
 }
 
 fn d_abr() -> String {
@@ -3150,6 +3520,9 @@ pub fn hardware_profiles() -> Vec<RenderProfile> {
                 video_bitrate: Some("12M".into()),
                 audio_bitrate: "192k".into(),
                 preset: "medium".into(),
+                height: None,
+                loudnorm: None,
+                timecode: false,
             }
         })
         .collect()
@@ -3270,6 +3643,9 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             video_bitrate: None,
             audio_bitrate: "192k".into(),
             preset: "slow".into(),
+            height: None,
+            loudnorm: None,
+            timecode: false,
         },
         RenderProfile {
             id: "mp4-h264-fast".into(),
@@ -3281,6 +3657,9 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             video_bitrate: None,
             audio_bitrate: "128k".into(),
             preset: "veryfast".into(),
+            height: None,
+            loudnorm: None,
+            timecode: false,
         },
         RenderProfile {
             id: "mp4-h265".into(),
@@ -3292,6 +3671,9 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             video_bitrate: None,
             audio_bitrate: "192k".into(),
             preset: "medium".into(),
+            height: None,
+            loudnorm: None,
+            timecode: false,
         },
         RenderProfile {
             id: "webm-vp9".into(),
@@ -3303,6 +3685,9 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             video_bitrate: None,
             audio_bitrate: "128k".into(),
             preset: "good".into(),
+            height: None,
+            loudnorm: None,
+            timecode: false,
         },
         RenderProfile {
             id: "mov-prores".into(),
@@ -3314,6 +3699,9 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             video_bitrate: None,
             audio_bitrate: "1536k".into(),
             preset: "medium".into(),
+            height: None,
+            loudnorm: None,
+            timecode: false,
         },
         RenderProfile {
             id: "mp3-audio".into(),
@@ -3325,6 +3713,37 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             video_bitrate: None,
             audio_bitrate: "320k".into(),
             preset: "medium".into(),
+            height: None,
+            loudnorm: None,
+            timecode: false,
+        },
+        RenderProfile {
+            id: "wav-audio".into(),
+            label: "WAV · uncompressed audio".into(),
+            container: "wav".into(),
+            video_codec: "none".into(),
+            audio_codec: "pcm_s16le".into(),
+            crf: None,
+            video_bitrate: None,
+            audio_bitrate: "1536k".into(),
+            preset: "medium".into(),
+            height: None,
+            loudnorm: None,
+            timecode: false,
+        },
+        RenderProfile {
+            id: "m4a-aac".into(),
+            label: "M4A · AAC audio only".into(),
+            container: "m4a".into(),
+            video_codec: "none".into(),
+            audio_codec: "aac".into(),
+            crf: None,
+            video_bitrate: None,
+            audio_bitrate: "256k".into(),
+            preset: "medium".into(),
+            height: None,
+            loudnorm: None,
+            timecode: false,
         },
     ]
 }
@@ -3466,22 +3885,53 @@ fn build_input(clip: &Clip, project: &Project, index: usize, src_len: f64) -> Re
             index,
             has_audio: false,
         }),
-        Source::Title { background, .. } => Ok(Input {
+        Source::Title {
+            background, style, ..
+        } => Ok(Input {
+            args: vec![
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                if style.opaque {
+                    format!(
+                        "color=c={}:s={}x{}:r={}:d={:.4}",
+                        sanitise_color(background),
+                        project.width,
+                        project.height,
+                        project.fps,
+                        dur
+                    )
+                } else {
+                    // A transparent card must carry alpha from the source, or
+                    // the text lands on black.
+                    format!(
+                        "color=c=black@0:s={}x{}:r={}:d={:.4},format=yuva420p",
+                        project.width, project.height, project.fps, dur
+                    )
+                },
+            ],
+            index,
+            has_audio: false,
+        }),
+        // One lavfi graph with two outputs: out0 is picture, out1 is sound, so
+        // the clip has both [N:v] and [N:a] like any recording.
+        Source::Bars => Ok(Input {
             args: vec![
                 "-f".into(),
                 "lavfi".into(),
                 "-i".into(),
                 format!(
-                    "color=c={}:s={}x{}:r={}:d={:.4}",
-                    sanitise_color(background),
-                    project.width,
-                    project.height,
-                    project.fps,
-                    dur
+                    "smptehdbars=s={w}x{h}:r={fps}:d={dur:.4}[out0];\
+sine=f=1000:d={dur:.4}:sample_rate={rate},volume=0.1[out1]",
+                    w = project.width,
+                    h = project.height,
+                    fps = project.fps,
+                    rate = project.sample_rate,
+                    dur = dur.max(0.04)
                 ),
             ],
             index,
-            has_audio: false,
+            has_audio: true,
         }),
     }
 }
@@ -3646,18 +4096,27 @@ pub fn render_args(
                 ));
             }
             chain.push("setsar=1".into());
-            chain.push(format!("fps={}", project.fps));
+            // Only a speed change makes frames that were never shot; at 1x
+            // every interpolation mode is the same plain frame rate conversion.
+            let retimed = (seg.speed - 1.0).abs() > 0.001 && !clip.is_generated();
+            chain.push(match (retimed, clip.interpolation.as_str()) {
+                (true, "blending") => format!("framerate=fps={}", project.fps),
+                (true, "optical") => format!(
+                    "minterpolate=fps={}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir",
+                    project.fps
+                ),
+                _ => format!("fps={}", project.fps),
+            });
 
             if let Source::Title {
-                text, size, color, ..
+                text,
+                size,
+                color,
+                style,
+                ..
             } = &clip.source
             {
-                chain.push(format!(
-                    "drawtext=text='{}':fontsize={:.0}:fontcolor={}:x=(w-text_w)/2:y=(h-text_h)/2",
-                    escape_drawtext(text),
-                    size,
-                    sanitise_color(color)
-                ));
+                chain.push(title_drawtext(text, *size, color, style, clip_dur));
             }
 
             let mut pipe = Pipeline::new();
@@ -3987,6 +4446,16 @@ a='if(gt(Y,H*(1-min(1,T/{d:.4}))),alpha(X,Y-H*(1-min(1,T/{d:.4}))),0)'"
             if (gain - 1.0).abs() > 0.001 {
                 chain.push(format!("volume={gain:.4}"));
             }
+            if track.pan.abs() > 0.001 {
+                // Balance, as Premiere's track panner: the far side is left
+                // alone and the near side is attenuated.
+                let p = track.pan.clamp(-1.0, 1.0);
+                chain.push(format!(
+                    "pan=stereo|c0={:.4}*c0|c1={:.4}*c1",
+                    (1.0 - p).min(1.0),
+                    (1.0 + p).min(1.0)
+                ));
+            }
 
             let mut pipe = Pipeline::new();
             pipe.extend(chain);
@@ -3999,6 +4468,31 @@ a='if(gt(Y,H*(1-min(1,T/{d:.4}))),alpha(X,Y-H*(1-min(1,T/{d:.4}))),0)'"
                     pipe.split();
                 } else {
                     pipe.extend(c.filters);
+                }
+            }
+
+            // On an audio track a transition is a crossfade. Audio time here is
+            // segment-local, so the head fade belongs to the first segment and
+            // the tail fade to the last.
+            if track.kind == TrackKind::Audio {
+                if let Some(t) = &clip.transition_in {
+                    if seg.out_offset <= 1e-6 {
+                        let d = t.duration.clamp(0.01, seg.out_len.max(0.01));
+                        pipe.push(format!(
+                            "afade=t=in:st=0:d={d:.4}:curve={}",
+                            sanitise_curve(&t.curve)
+                        ));
+                    }
+                }
+                if let Some((d, curve)) = &clip.tail_fade {
+                    if seg.out_offset + seg.out_len >= clip_dur - 1e-3 {
+                        let d = d.clamp(0.01, seg.out_len.max(0.01));
+                        pipe.push(format!(
+                            "afade=t=out:st={:.4}:d={d:.4}:curve={}",
+                            (seg.out_len - d).max(0.0),
+                            sanitise_curve(curve)
+                        ));
+                    }
                 }
             }
 
@@ -4111,7 +4605,22 @@ enable='between(t,{:.4},{:.4})'[{out}]",
             }
             current = cued;
         }
-        filters.push(format!("[{current}]format=yuv420p[vout]"));
+        let mut finish: Vec<String> = Vec::new();
+        if profile.timecode {
+            finish.push(format!(
+                "drawtext=timecode='00\\:00\\:00\\:00':rate={fps}:fontsize={size}:fontcolor=white:\
+box=1:boxcolor=black@0.6:boxborderw=8:x=(w-text_w)/2:y=h-text_h-{margin}",
+                fps = project.fps,
+                size = (project.height / 24).max(12),
+                margin = (project.height / 30).max(8)
+            ));
+        }
+        if let Some(h) = profile.height.filter(|h| *h != project.height && *h >= 16) {
+            // -2 keeps the width even, which every 4:2:0 encoder needs.
+            finish.push(format!("scale=-2:{}", h - h % 2));
+        }
+        finish.push("format=yuv420p".into());
+        filters.push(format!("[{current}]{}[vout]", finish.join(",")));
         Some("vout".to_string())
     } else {
         None
@@ -4205,18 +4714,34 @@ attack={:.1}:release={:.1}[{out}]",
     }
 
     // ---- mix audio ----
+    // The master bus: fader, then loudness normalisation. loudnorm upsamples
+    // to 192 kHz internally, so the rate is put back afterwards.
+    let mut master = String::new();
+    if (project.master_volume - 1.0).abs() > 0.001 {
+        master.push_str(&format!(
+            "volume={:.4},",
+            project.master_volume.clamp(0.0, 4.0)
+        ));
+    }
+    if let Some(lufs) = profile.loudnorm {
+        master.push_str(&format!(
+            "loudnorm=I={:.1}:TP=-1.5:LRA=11,aresample={},",
+            lufs.clamp(-70.0, -5.0),
+            project.sample_rate
+        ));
+    }
     let final_audio = if audio_labels.is_empty() {
         None
     } else if audio_labels.len() == 1 {
         let only = &audio_labels[0];
         filters.push(format!(
-            "[{only}]apad,atrim=0:{total:.4},asetpts=PTS-STARTPTS[aout]"
+            "[{only}]{master}apad,atrim=0:{total:.4},asetpts=PTS-STARTPTS[aout]"
         ));
         Some("aout".to_string())
     } else {
         let joined: String = audio_labels.iter().map(|l| format!("[{l}]")).collect();
         filters.push(format!(
-            "{joined}amix=inputs={}:dropout_transition=0:normalize=0,apad,atrim=0:{total:.4},asetpts=PTS-STARTPTS[aout]",
+            "{joined}amix=inputs={}:dropout_transition=0:normalize=0,{master}apad,atrim=0:{total:.4},asetpts=PTS-STARTPTS[aout]",
             audio_labels.len()
         ));
         Some("aout".to_string())
@@ -4417,7 +4942,9 @@ fn atempo_stages(speed: f64) -> Vec<f64> {
 
 /// Write a timestamped snapshot of the project, so a crash costs minutes
 /// rather than a session. Old snapshots are pruned.
-pub fn autosave(project: &Project, item_id: &str, dir: &Path) -> Result<String> {
+/// Generic over what is written so the command layer can store the project
+/// exactly as the editor sent it, fields Rust does not model included.
+pub fn autosave<T: Serialize>(project: &T, item_id: &str, dir: &Path) -> Result<String> {
     const KEEP: usize = 20;
     std::fs::create_dir_all(dir)?;
     let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
@@ -4471,7 +4998,7 @@ pub fn autosaves(item_id: &str, dir: &Path) -> Vec<String> {
 }
 
 /// Read a snapshot back.
-pub fn restore_autosave(path: &str) -> Result<Project> {
+pub fn restore_autosave<T: serde::de::DeserializeOwned>(path: &str) -> Result<T> {
     let text = std::fs::read_to_string(path)?;
     Ok(serde_json::from_str(&text)?)
 }
@@ -4547,6 +5074,7 @@ pub fn to_edl(project: &Project, title: &str) -> String {
             Source::Still { path } => path.rsplit('/').next().unwrap_or("STILL").to_string(),
             Source::Title { .. } => "TITLE".into(),
             Source::Color { .. } => "COLOUR".into(),
+            Source::Bars => "BARS".into(),
             Source::Adjustment => continue, // an adjustment layer is not an edit
             Source::Nested { name, .. } => name.to_uppercase(),
         };
@@ -4922,12 +5450,16 @@ pub fn apply_transitions(project: &Project) -> Project {
                 c.transition_in = Some(Transition {
                     kind: t.kind,
                     duration: overlap,
+                    curve: t.curve.clone(),
                 });
             }
             // Extend the outgoing tail so it plays under the dissolve.
             {
                 let c = &mut track.clips[prev_i];
                 c.out_point += overlap * out_speed;
+                if track.kind == TrackKind::Audio {
+                    c.tail_fade = Some((overlap, t.curve.clone()));
+                }
             }
         }
     }
@@ -4987,6 +5519,27 @@ pub fn slice(project: &Project, start: f64, end: f64) -> Project {
         }
         track.clips = kept;
     }
+    // Markers and subtitles are timeline positions too. Without rebasing, a
+    // zone export would put its chapters and captions where the zone began.
+    out.markers = project
+        .markers
+        .iter()
+        .filter(|m| m.time >= start - 1e-6 && m.time < end)
+        .map(|m| Marker {
+            time: (m.time - start).max(0.0),
+            ..m.clone()
+        })
+        .collect();
+    out.subtitles = project
+        .subtitles
+        .iter()
+        .filter(|c| c.end > start && c.start < end)
+        .map(|c| Subtitle {
+            start: (c.start - start).max(0.0),
+            end: (c.end - start).min(end - start),
+            ..c.clone()
+        })
+        .collect();
     out
 }
 
@@ -5008,6 +5561,9 @@ pub fn preview_profile() -> RenderProfile {
         video_bitrate: None,
         audio_bitrate: "128k".into(),
         preset: "realtime".into(),
+        height: None,
+        loudnorm: None,
+        timecode: false,
     }
 }
 
@@ -5090,6 +5646,17 @@ pub fn clear_previews(cache_dir: &Path) -> Result<usize> {
             && std::fs::remove_file(&p).is_ok()
         {
             n += 1;
+        }
+    }
+    // Exact monitor frames live in their own folder beside the spans.
+    if let Ok(frames) = std::fs::read_dir(cache_dir.join("frames")) {
+        for entry in frames.flatten() {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) == Some("png")
+                && std::fs::remove_file(&p).is_ok()
+            {
+                n += 1;
+            }
         }
     }
     Ok(n)
@@ -5189,7 +5756,30 @@ pub fn render(project: &Project, profile: &RenderProfile, output: &Path) -> Resu
         srt_file = Some(path);
     }
 
-    let args = render_args(project, profile, output, srt_file.as_deref())?;
+    let mut args = render_args(project, profile, output, srt_file.as_deref())?;
+
+    let mut chapter_file: Option<PathBuf> = None;
+    if matches!(profile.container.as_str(), "mp4" | "mov" | "mkv") {
+        if let Some(meta) = chapter_metadata(project) {
+            let path =
+                std::env::temp_dir().join(format!("odyssey-chapters-{}.txt", uuid::Uuid::new_v4()));
+            std::fs::write(&path, meta)?;
+            args = with_chapters(args, &path);
+            chapter_file = Some(path);
+        }
+    }
+
+    let result = execute(args);
+    for path in [&srt_file, &chapter_file].into_iter().flatten() {
+        let _ = std::fs::remove_file(path);
+    }
+    result?;
+    Ok(output.to_string_lossy().to_string())
+}
+
+/// Run ffmpeg with a finished argument vector, spilling an oversized graph to
+/// a file first.
+fn execute(args: Vec<String>) -> Result<()> {
     // A large timeline exceeds the kernel's per-argument limit, so the graph
     // may have to travel as a file rather than an argument.
     let (args, graph_file) = spill_graph(args)?;
@@ -5200,9 +5790,6 @@ pub fn render(project: &Project, profile: &RenderProfile, output: &Path) -> Resu
             Error::Io(e)
         }
     })?;
-    if let Some(path) = &srt_file {
-        let _ = std::fs::remove_file(path);
-    }
     if let Some(path) = &graph_file {
         let _ = std::fs::remove_file(path);
     }
@@ -5213,11 +5800,295 @@ pub fn render(project: &Project, profile: &RenderProfile, output: &Path) -> Resu
         let msg: Vec<&str> = tail.into_iter().rev().collect();
         return Err(Error::Render(msg.join("\n")));
     }
+    Ok(())
+}
+
+/// Chapter markers as an FFMETADATA document, or None when there are none.
+///
+/// A chapter runs to the next chapter, or to its own end when it was given a
+/// duration, or to the end of the timeline.
+pub fn chapter_metadata(project: &Project) -> Option<String> {
+    let mut chapters: Vec<&Marker> = project
+        .markers
+        .iter()
+        .filter(|m| m.kind == "chapter")
+        .collect();
+    if chapters.is_empty() {
+        return None;
+    }
+    chapters.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let total = project.duration();
+    let ms = |t: f64| (t.max(0.0) * 1000.0).round() as u64;
+    // Metadata values escape '=', ';', '#', '\\' and newlines with a backslash.
+    let esc = |v: &str| {
+        let mut out = String::new();
+        for ch in v.chars() {
+            match ch {
+                '=' | ';' | '#' | '\\' => {
+                    out.push('\\');
+                    out.push(ch);
+                }
+                '\n' | '\r' => out.push(' '),
+                _ => out.push(ch),
+            }
+        }
+        out
+    };
+    let mut doc = String::from(";FFMETADATA1\n");
+    for (i, m) in chapters.iter().enumerate() {
+        let next = chapters.get(i + 1).map(|n| n.time).unwrap_or(total);
+        let end = if m.duration > 0.0 {
+            (m.time + m.duration).min(next)
+        } else {
+            next
+        };
+        if end <= m.time {
+            continue;
+        }
+        let title = if m.name.trim().is_empty() {
+            format!("Chapter {}", i + 1)
+        } else {
+            m.name.trim().to_string()
+        };
+        doc.push_str(&format!(
+            "[CHAPTER]\nTIMEBASE=1/1000\nSTART={}\nEND={}\ntitle={}\n",
+            ms(m.time),
+            ms(end),
+            esc(&title)
+        ));
+    }
+    Some(doc)
+}
+
+/// Add a metadata input and map its chapters. Like the subtitle input, it must
+/// follow every media input so the graph's stream indices stay put.
+fn with_chapters(mut args: Vec<String>, meta: &Path) -> Vec<String> {
+    let at = args
+        .iter()
+        .position(|a| a == "-filter_complex")
+        .unwrap_or(args.len());
+    let index = args[..at].iter().filter(|a| *a == "-i").count();
+    args.insert(at, meta.to_string_lossy().to_string());
+    args.insert(at, "-i".into());
+    let out = args.len() - 1;
+    args.insert(out, index.to_string());
+    args.insert(out, "-map_chapters".into());
+    args
+}
+
+/// Export the frame under the playhead as a still image, rendered by the same
+/// graph as a full export so it matches the export rather than the preview.
+pub fn export_frame(project: &Project, at: f64, output: &Path) -> Result<String> {
+    let fps = project.fps.max(1) as f64;
+    let at = at.clamp(0.0, (project.duration() - 1.0 / fps).max(0.0));
+    let mut sliced = slice(project, at, at + 2.0 / fps);
+    if sliced.clip_count() == 0 {
+        return Err(Error::Invalid(
+            "nothing on the timeline at the playhead".into(),
+        ));
+    }
+    // A still has no sound, and leaving audio in would ask for an audio codec.
+    for track in &mut sliced.tracks {
+        track.muted = true;
+    }
+    let profile = RenderProfile {
+        id: "frame".into(),
+        label: "Frame".into(),
+        container: "png".into(),
+        video_codec: "png".into(),
+        audio_codec: "none".into(),
+        crf: None,
+        video_bitrate: None,
+        audio_bitrate: d_abr(),
+        preset: d_preset(),
+        height: None,
+        loudnorm: None,
+        timecode: false,
+    };
+    let args = render_args(&sliced, &profile, output, None)?;
+    let mut kept: Vec<String> = Vec::with_capacity(args.len() + 4);
+    let mut skip = false;
+    for (i, a) in args.iter().enumerate() {
+        if skip {
+            skip = false;
+            continue;
+        }
+        // PNG cannot take 4:2:0; let ffmpeg pick an RGB format for it.
+        if a == "-pix_fmt" {
+            skip = true;
+            continue;
+        }
+        if i == args.len() - 1 {
+            kept.extend(["-frames:v".into(), "1".into(), "-update".into(), "1".into()]);
+        }
+        kept.push(a.clone());
+    }
+    execute(kept)?;
     Ok(output.to_string_lossy().to_string())
 }
 
+/// One exact frame for the monitor, rendered by the same graph an export uses.
+///
+/// The live preview reproduces most effects on the GPU, but not all of them:
+/// frei0r plugins, LUTs, temporal filters and nested sequences only exist in
+/// ffmpeg. When the playhead rests on one of those, the monitor shows this
+/// frame instead, so a parked frame is always the frame the export will make.
+///
+/// Frames are cached by the content of the slice they depend on, so stepping
+/// back to a frame already seen costs nothing.
+pub fn preview_frame(project: &Project, at: f64, cache_dir: &Path) -> Result<String> {
+    let fps = project.fps.max(1) as f64;
+    let key = preview_key(project, at, at + 2.0 / fps, 1.0);
+    let dir = cache_dir.join("frames");
+    std::fs::create_dir_all(&dir)?;
+    let out = dir.join(format!("frame-{key}.png"));
+    if out.is_file() {
+        return Ok(out.to_string_lossy().to_string());
+    }
+    let flat = flatten_nested(project, cache_dir)?;
+    // Write beside the final name and rename, so a frame read while ffmpeg is
+    // still writing it can never be half an image.
+    let partial = dir.join(format!("frame-{key}.part.png"));
+    export_frame(&flat, at, &partial)?;
+    std::fs::rename(&partial, &out)?;
+    Ok(out.to_string_lossy().to_string())
+}
+
+/// What an EBU R128 meter reports for a whole programme.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LoudnessReport {
+    /// Gated integrated loudness, LUFS.
+    pub integrated: f64,
+    /// Loudness range, LU.
+    pub range: f64,
+    /// Oversampled true peak, dBTP.
+    pub true_peak: f64,
+    /// The loudest 400 ms window, LUFS.
+    pub momentary_max: f64,
+    /// The loudest 3 s window, LUFS.
+    pub short_term_max: f64,
+}
+
+/// Measure the finished mix the way a broadcaster's QC would.
+///
+/// The preview meters the monitor's own audio graph, which is close but is
+/// not the export: it does not run the audio effects ffmpeg does. This mixes
+/// the timeline through the real render graph to a float WAV and runs
+/// ffmpeg's `ebur128` over it, so the numbers are the delivered file's.
+pub fn measure_loudness(project: &Project, cache_dir: &Path) -> Result<LoudnessReport> {
+    if project.duration() <= 0.0 {
+        return Err(Error::Invalid("the timeline is empty".into()));
+    }
+    std::fs::create_dir_all(cache_dir)?;
+    let flat = flatten_nested(project, cache_dir)?;
+    let wav = cache_dir.join(format!("loudness-{}.wav", std::process::id()));
+    let profile = RenderProfile {
+        id: "loudness".into(),
+        label: "Loudness".into(),
+        container: "wav".into(),
+        video_codec: "none".into(),
+        audio_codec: "pcm_f32le".into(),
+        crf: None,
+        video_bitrate: None,
+        audio_bitrate: d_abr(),
+        preset: d_preset(),
+        height: None,
+        loudnorm: None,
+        timecode: false,
+    };
+    let args = render_args(&flat, &profile, &wav, None)?;
+    let rendered = execute(args);
+    let measured = rendered.and_then(|_| {
+        let out = Command::new("ffmpeg")
+            .args(["-hide_banner", "-nostats", "-i"])
+            .arg(&wav)
+            .args(["-af", "ebur128=peak=true", "-f", "null", "-"])
+            .output()?;
+        if !out.status.success() {
+            return Err(Error::Render(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("").to_string()));
+        }
+        parse_ebur128(&String::from_utf8_lossy(&out.stderr))
+    });
+    let _ = std::fs::remove_file(&wav);
+    measured
+}
+
+/// Read `ebur128`'s per-frame log and closing summary.
+fn parse_ebur128(log: &str) -> Result<LoudnessReport> {
+    let field = |line: &str, key: &str| -> Option<f64> {
+        let at = line.find(key)? + key.len();
+        line[at..].split_whitespace().next()?.parse().ok()
+    };
+    let (mut m_max, mut s_max) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let mut summary = false;
+    let (mut i, mut lra, mut tp) = (None, None, None);
+    for line in log.lines() {
+        if line.contains("Summary:") {
+            summary = true;
+            continue;
+        }
+        if !summary {
+            if line.contains(" M:") && line.contains(" S:") {
+                if let Some(v) = field(line, " M:") { m_max = m_max.max(v); }
+                if let Some(v) = field(line, " S:") { s_max = s_max.max(v); }
+            }
+            continue;
+        }
+        let t = line.trim_start();
+        if t.starts_with("I:") { i = field(t, "I:"); }
+        else if t.starts_with("LRA:") { lra = field(t, "LRA:"); }
+        else if t.starts_with("Peak:") { tp = field(t, "Peak:"); }
+    }
+    match (i, lra, tp) {
+        (Some(integrated), Some(range), Some(true_peak)) => Ok(LoudnessReport {
+            integrated,
+            range,
+            true_peak,
+            momentary_max: m_max,
+            short_term_max: s_max,
+        }),
+        _ => Err(Error::Render("ebur128 printed no summary; is there any audio?".into())),
+    }
+}
+
+/// The loudest sample in a stretch of a source, in dBFS. This is what
+/// Premiere's "Normalize max peak" needs to know before it sets a gain.
+pub fn audio_peak(source: &str, start: f64, end: f64) -> Result<f64> {
+    let src = canonical_source(source)?;
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-hide_banner", "-nostats"]);
+    if start > 0.0 {
+        cmd.args(["-ss", &format!("{start:.4}")]);
+    }
+    if end > start {
+        cmd.args(["-t", &format!("{:.4}", end - start)]);
+    }
+    let out = cmd
+        .arg("-i")
+        .arg(&src)
+        .args(["-map", "a:0", "-af", "volumedetect", "-f", "null", "-"])
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Error::NoFfmpeg
+            } else {
+                Error::Io(e)
+            }
+        })?;
+    let text = String::from_utf8_lossy(&out.stderr);
+    text.lines()
+        .filter_map(|l| l.split("max_volume:").nth(1))
+        .filter_map(|v| v.trim().trim_end_matches("dB").trim().parse::<f64>().ok())
+        .next()
+        .ok_or_else(|| Error::Invalid("that clip has no audio to measure".into()))
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::Write;
 
@@ -5295,6 +6166,12 @@ mod tests {
 
     fn media_clip(id: &str, path: &Path, start: f64, a: f64, b: f64) -> Clip {
         Clip {
+            name: String::new(),
+            label: String::new(),
+            group: None,
+            link: None,
+            interpolation: "sampling".into(),
+            tail_fade: None,
             id: id.into(),
             source: Source::Media {
                 path: path.to_string_lossy().to_string(),
@@ -5317,6 +6194,8 @@ mod tests {
 
     fn video_track(clips: Vec<Clip>) -> Track {
         Track {
+            sync_lock: true,
+            pan: 0.0,
             id: "t1".into(),
             name: "V1".into(),
             kind: TrackKind::Video,
@@ -5622,8 +6501,15 @@ mod tests {
     fn title_clips_need_no_file_on_disk() {
         let p = Project {
             tracks: vec![video_track(vec![Clip {
+                name: String::new(),
+                label: String::new(),
+                group: None,
+                link: None,
+                interpolation: "sampling".into(),
+                tail_fade: None,
                 id: "t".into(),
                 source: Source::Title {
+                    style: Box::default(),
                     text: "Odyssey".into(),
                     background: "black".into(),
                     size: 96.0,
@@ -5891,6 +6777,20 @@ mod tests {
                 y: p_zero(),
             },
             Effect::Vignette { angle: p_zero() },
+            Effect::Mask {
+                shape: "ellipse".into(),
+                x: p_fifty(),
+                y: p_fifty(),
+                width: p_fifty(),
+                height: p_fifty(),
+                feather: p_twenty(),
+                invert: false,
+            },
+            Effect::Tint {
+                black: "black".into(),
+                white: "white".into(),
+                amount: 1.0,
+            },
             Effect::ChromaKey {
                 color: "green".into(),
                 similarity: p_point_one(),
@@ -5906,6 +6806,7 @@ mod tests {
             },
             Effect::Volume { level: p_one() },
             Effect::AudioFade {
+                curve: "tri".into(),
                 in_secs: 0.1,
                 out_secs: 0.1,
             },
@@ -6212,7 +7113,7 @@ mod tests {
         }
         assert_eq!(
             all.len(),
-            96,
+            98,
             "catalogue size changed — update the UI list too"
         );
     }
@@ -6530,6 +7431,7 @@ mod tests {
             let a = media_clip("a", &src, 0.0, 0.0, 4.0);
             let mut b = media_clip("b", &src, 4.0, 2.0, 6.0);
             b.transition_in = Some(Transition {
+                curve: "qsin".into(),
                 kind,
                 duration: 1.0,
             });
@@ -6766,6 +7668,120 @@ mod tests {
         assert_eq!(g.matches("overlay=").count(), 1);
     }
 
+    /// Ground truth for the preview's GPU pipeline. Renders one still through
+    /// the real export path once per effect and writes the frames, with the
+    /// effect JSON beside them, for `scripts/preview-parity` to compare the
+    /// monitor's output against. Ignored by default: it is a fixture
+    /// generator, not an assertion. Run with
+    /// `cargo test preview_parity_fixtures -- --ignored`.
+    #[test]
+    #[ignore]
+    fn preview_parity_fixtures() {
+        let dir = scratch("preview-parity");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("source.png");
+        let status = Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=1",
+                   "-frames:v", "1"])
+            .arg(&src)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let cases: Vec<(&str, serde_json::Value)> = vec![
+            ("none", serde_json::json!({"kind": "opacity", "level": 1})),
+            ("color", serde_json::json!({"kind": "color", "brightness": 0.12, "contrast": 1.3, "saturation": 1.5, "gamma": 1.2})),
+            ("hue", serde_json::json!({"kind": "hue", "degrees": 60})),
+            ("blur", serde_json::json!({"kind": "blur", "sigma": 3})),
+            ("boxblur", serde_json::json!({"kind": "boxblur", "radius": 3})),
+            ("sharpen", serde_json::json!({"kind": "sharpen", "amount": 1})),
+            ("vignette", serde_json::json!({"kind": "vignette", "angle": 0.8})),
+            ("chromakey", serde_json::json!({"kind": "chromakey", "color": "0x00ff00", "similarity": 0.25, "blend": 0.1})),
+            ("colorkey", serde_json::json!({"kind": "colorkey", "color": "red", "similarity": 0.3, "blend": 0.1})),
+            ("lumakey", serde_json::json!({"kind": "lumakey", "threshold": 0.0, "tolerance": 0.1})),
+            ("despill", serde_json::json!({"kind": "despill", "colour": "green", "amount": 0.5})),
+            ("crop", serde_json::json!({"kind": "crop", "x": 40, "y": 20, "width": 160, "height": 100})),
+            ("rotate", serde_json::json!({"kind": "rotate", "degrees": 20})),
+            ("mask", serde_json::json!({"kind": "mask", "shape": "ellipse", "x": 45, "y": 55, "width": 60, "height": 50, "feather": 20, "invert": false})),
+            ("maskrect", serde_json::json!({"kind": "mask", "shape": "rectangle", "x": 50, "y": 50, "width": 40, "height": 40, "feather": 10, "invert": true})),
+            ("tint", serde_json::json!({"kind": "tint", "black": "navy", "white": "yellow", "amount": 0.8})),
+            ("exposure", serde_json::json!({"kind": "exposure", "stops": 0.7})),
+            ("invert", serde_json::json!({"kind": "invert"})),
+            ("monochrome", serde_json::json!({"kind": "monochrome"})),
+            ("sepia", serde_json::json!({"kind": "sepia"})),
+            ("temperature", serde_json::json!({"kind": "temperature", "kelvin": 3500})),
+            ("levels", serde_json::json!({"kind": "levels", "black": 0.1, "white": 0.8})),
+            ("posterize", serde_json::json!({"kind": "posterize", "levels": 4})),
+            ("vibrance", serde_json::json!({"kind": "vibrance", "intensity": 0.8})),
+            ("colorbalance", serde_json::json!({"kind": "colorbalance", "r": 0.3, "g": 0.0, "b": -0.3})),
+            ("curves", serde_json::json!({"kind": "curves", "master": [[0, 0], [0.5, 0.7], [1, 1]], "red": [], "green": [], "blue": []})),
+            ("flip", serde_json::json!({"kind": "flip", "horizontal": true, "vertical": false})),
+            ("pixelate", serde_json::json!({"kind": "pixelate", "size": 12})),
+            ("mirror", serde_json::json!({"kind": "mirror"})),
+            ("lenscorrect", serde_json::json!({"kind": "lenscorrect", "k1": -0.3, "k2": 0.1})),
+            ("aberration", serde_json::json!({"kind": "chromaticaberration", "amount": 6})),
+            ("emboss", serde_json::json!({"kind": "emboss"})),
+            ("crisp", serde_json::json!({"kind": "crisp"})),
+            ("halfopacity", serde_json::json!({"kind": "opacity", "level": 0.5})),
+            ("scanlines", serde_json::json!({"kind": "scanlines", "amount": 0.5})),
+            ("transpose", serde_json::json!({"kind": "transpose", "dir": 1})),
+            ("reframe", serde_json::json!({"kind": "reframe", "aspect": 1.0})),
+            ("transform", serde_json::json!({"kind": "transform", "scale": 0.6, "x": 20, "y": 10})),
+            ("channelmixer", serde_json::json!({"kind": "channelmixer", "rr": 0.5, "gg": 1.0, "bb": 1.5})),
+            ("swapuv", serde_json::json!({"kind": "swapuv"})),
+            ("drawbox", serde_json::json!({"kind": "drawbox", "x": 30, "y": 30, "w": 120, "h": 80, "color": "yellow", "thickness": 6})),
+        ];
+
+        let mut index = Vec::new();
+        let mut failed = Vec::new();
+        for (name, json) in &cases {
+            let effect: Effect = serde_json::from_value(json.clone())
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            let mut c = media_clip("1", &src, 0.0, 0.0, 1.0);
+            c.source = Source::Still { path: src.to_string_lossy().to_string() };
+            c.effects = vec![effect];
+            let p = Project {
+                width: 320,
+                height: 180,
+                fps: 25,
+                tracks: vec![video_track(vec![c])],
+                ..Default::default()
+            };
+            let out = dir.join(format!("{name}.png"));
+            match export_frame(&p, 0.0, &out) {
+                Ok(_) => index.push(serde_json::json!({"name": name, "effect": json})),
+                Err(e) => failed.push(format!("{name}: {e}")),
+            }
+        }
+        std::fs::write(dir.join("cases.json"), serde_json::to_string_pretty(&index).unwrap()).unwrap();
+        assert!(failed.is_empty(), "renders failed: {failed:#?}");
+    }
+
+    #[test]
+    fn loudness_is_measured_from_the_rendered_mix() {
+        let s = temp_source("loud");
+        let p = Project {
+            tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 0.2)])],
+            ..Default::default()
+        };
+        let report = measure_loudness(&p, &scratch("loudness-cache")).unwrap();
+        // A full-scale sine is loud; the exact figure matters less than that
+        // every field came back from ffmpeg rather than a default.
+        assert!(report.true_peak.is_finite() && report.true_peak < 1.0, "{report:?}");
+        assert!(report.momentary_max.is_finite(), "{report:?}");
+    }
+
+    #[test]
+    fn ebur128_summary_is_parsed() {
+        let log = "[Parsed_ebur128_0 @ 0x1] t: 0.4  TARGET:-23 LUFS    M: -18.2 S:-120.7     I: -18.2 LUFS       LRA:   0.0 LU  FTPK: -3.0 dBFS  TPK: -3.0 dBFS\n\
+[Parsed_ebur128_0 @ 0x1] t: 0.5  TARGET:-23 LUFS    M: -17.9 S:-19.0     I: -18.0 LUFS\n\
+[Parsed_ebur128_0 @ 0x1] Summary:\n\n  Integrated loudness:\n    I:         -18.0 LUFS\n    Threshold: -28.0 LUFS\n\n\
+  Loudness range:\n    LRA:         2.5 LU\n    Threshold: -38.0 LUFS\n\n  True peak:\n    Peak:       -2.9 dBFS\n";
+        let r = parse_ebur128(log).unwrap();
+        assert_eq!((r.integrated, r.range, r.true_peak), (-18.0, 2.5, -2.9));
+        assert_eq!((r.momentary_max, r.short_term_max), (-17.9, -19.0));
+    }
+
     #[test]
     fn a_still_frame_loops_a_single_image() {
         let png = scratch("odyssey-still.png");
@@ -6943,6 +7959,7 @@ mod tests {
         let s = temp_source("tr1");
         let mut c = media_clip("1", &s, 0.0, 0.0, 3.0);
         c.transition_in = Some(Transition {
+            curve: "qsin".into(),
             kind: TransitionKind::Dissolve,
             duration: 0.6,
         });
@@ -6961,6 +7978,7 @@ mod tests {
         let s = temp_source("tr2");
         let mut c = media_clip("1", &s, 0.0, 0.0, 3.0);
         c.transition_in = Some(Transition {
+            curve: "qsin".into(),
             kind: TransitionKind::DipToBlack,
             duration: 0.4,
         });
@@ -6983,6 +8001,7 @@ mod tests {
         let s = temp_source("tr3");
         let mut c = media_clip("1", &s, 0.0, 0.0, 1.0);
         c.transition_in = Some(Transition {
+            curve: "qsin".into(),
             kind: TransitionKind::Dissolve,
             duration: 99.0,
         });
@@ -7119,6 +8138,9 @@ mod tests {
             ..Default::default()
         };
         p.markers.push(Marker {
+            comment: String::new(),
+            duration: 0.0,
+            kind: "comment".into(),
             id: "m".into(),
             time: 1.0,
             name: "cue".into(),
@@ -7128,7 +8150,7 @@ mod tests {
         let path = autosave(&p, "item1", &dir).unwrap();
         assert!(Path::new(&path).exists());
 
-        let restored = restore_autosave(&path).unwrap();
+        let restored: Project = restore_autosave(&path).unwrap();
         assert_eq!(restored.markers.len(), 1);
         assert_eq!(restored.markers[0].name, "cue");
         assert_eq!(restored.clip_count(), 1);
@@ -7149,6 +8171,7 @@ mod tests {
         let a = media_clip("a", &s, 0.0, 0.0, 4.0);
         let mut b = media_clip("b", &s, 4.0, 2.0, 6.0);
         b.transition_in = Some(Transition {
+            curve: "qsin".into(),
             kind: TransitionKind::Dissolve,
             duration: 1.0,
         });
@@ -7190,6 +8213,7 @@ mod tests {
         // in_point 0 means no head handle at all.
         let mut b = media_clip("b", &s, 4.0, 0.0, 4.0);
         b.transition_in = Some(Transition {
+            curve: "qsin".into(),
             kind: TransitionKind::Dissolve,
             duration: 1.0,
         });
@@ -7222,6 +8246,7 @@ mod tests {
         let a = media_clip("a", &s, 0.0, 0.0, 0.5);
         let mut b = media_clip("b", &s, 0.5, 4.0, 8.0);
         b.transition_in = Some(Transition {
+            curve: "qsin".into(),
             kind: TransitionKind::Dissolve,
             duration: 2.0,
         });
@@ -7250,6 +8275,7 @@ mod tests {
         // A gap between them: this is a fade up, not a cross dissolve.
         let mut b = media_clip("b", &s, 5.0, 2.0, 6.0);
         b.transition_in = Some(Transition {
+            curve: "qsin".into(),
             kind: TransitionKind::Dissolve,
             duration: 1.0,
         });
@@ -7882,6 +8908,12 @@ mod e2e {
 
     fn clip(id: &str, src: &Path, start: f64, a: f64, b: f64) -> Clip {
         Clip {
+            name: String::new(),
+            label: String::new(),
+            group: None,
+            link: None,
+            interpolation: "sampling".into(),
+            tail_fade: None,
             id: id.into(),
             source: Source::Media {
                 path: src.to_string_lossy().to_string(),
@@ -7904,6 +8936,8 @@ mod e2e {
 
     fn track(id: &str, clips: Vec<Clip>) -> Track {
         Track {
+            sync_lock: true,
+            pan: 0.0,
             id: id.into(),
             name: id.into(),
             kind: TrackKind::Video,
@@ -8004,8 +9038,15 @@ mod e2e {
             tracks: vec![track(
                 "V1",
                 vec![Clip {
+                    name: String::new(),
+                    label: String::new(),
+                    group: None,
+                    link: None,
+                    interpolation: "sampling".into(),
+                    tail_fade: None,
                     id: "title".into(),
                     source: Source::Title {
+                        style: Box::default(),
                         text: "Odyssey Design".into(),
                         background: "#101820".into(),
                         size: 36.0,
@@ -8341,6 +9382,12 @@ mod e2e {
 
     fn colour_clip(id: &str, hex: &str, start: f64, len: f64) -> Clip {
         Clip {
+            name: String::new(),
+            label: String::new(),
+            group: None,
+            link: None,
+            interpolation: "sampling".into(),
+            tail_fade: None,
             id: id.into(),
             source: Source::Color { color: hex.into() },
             start,
@@ -8783,6 +9830,7 @@ mod e2e {
         let under = colour_clip("under", "black", 0.0, 2.0);
         let mut over = colour_clip("over", "white", 0.0, 2.0);
         over.transition_in = Some(Transition {
+            curve: "qsin".into(),
             kind: TransitionKind::Dissolve,
             duration: 1.5,
         });
@@ -8974,6 +10022,51 @@ mod e2e {
                 },
             ),
             ("reframe", Effect::Reframe { aspect: 1.0 }),
+            (
+                "mask-ellipse",
+                Effect::Mask {
+                    shape: "ellipse".into(),
+                    x: p_fifty(),
+                    y: p_fifty(),
+                    width: p_fifty(),
+                    height: p_fifty(),
+                    feather: p_twenty(),
+                    invert: false,
+                },
+            ),
+            (
+                "mask-rectangle-inverted-animated",
+                Effect::Mask {
+                    shape: "rectangle".into(),
+                    x: Param::Animated {
+                        keyframes: vec![
+                            Keyframe {
+                                time: 0.0,
+                                value: 20.0,
+                                easing: Easing::EaseInOut,
+                            },
+                            Keyframe {
+                                time: 1.0,
+                                value: 80.0,
+                                easing: Easing::Linear,
+                            },
+                        ],
+                    },
+                    y: p_fifty(),
+                    width: p_fifty(),
+                    height: p_fifty(),
+                    feather: Param::Static(0.0),
+                    invert: true,
+                },
+            ),
+            (
+                "tint",
+                Effect::Tint {
+                    black: "#102040".into(),
+                    white: "#ffe0a0".into(),
+                    amount: 0.8,
+                },
+            ),
             (
                 "posterize",
                 Effect::Posterize {
@@ -9395,6 +10488,7 @@ mod e2e {
             (
                 "audiofade",
                 Effect::AudioFade {
+                    curve: "tri".into(),
                     in_secs: 0.2,
                     out_secs: 0.2,
                 },
@@ -9755,6 +10849,7 @@ mod e2e {
             let a = clip("a", &src, 0.0, 0.0, 1.0);
             let mut b = clip("b", &src, 1.0, 0.5, 1.5);
             b.transition_in = Some(Transition {
+                curve: "qsin".into(),
                 kind,
                 duration: 0.4,
             });
@@ -10182,6 +11277,12 @@ mod proxy_contract {
         }
 
         let clip = Clip {
+            name: String::new(),
+            label: String::new(),
+            group: None,
+            link: None,
+            interpolation: "sampling".into(),
+            tail_fade: None,
             id: "c".into(),
             source: Source::Media {
                 path: original.to_string_lossy().to_string(),
@@ -10202,6 +11303,8 @@ mod proxy_contract {
         };
         let mut project = Project {
             tracks: vec![Track {
+                sync_lock: true,
+                pan: 0.0,
                 id: "t".into(),
                 name: "V1".into(),
                 kind: TrackKind::Video,
@@ -10302,10 +11405,18 @@ mod webview_playback {
 
         let project = Project {
             tracks: vec![Track {
+                sync_lock: true,
+                pan: 0.0,
                 id: "t".into(),
                 name: "V1".into(),
                 kind: TrackKind::Video,
                 clips: vec![Clip {
+                    name: String::new(),
+                    label: String::new(),
+                    group: None,
+                    link: None,
+                    interpolation: "sampling".into(),
+                    tail_fade: None,
                     id: "c".into(),
                     source: Source::Media {
                         path: src.to_string_lossy().to_string(),
@@ -10366,6 +11477,12 @@ mod stress {
 
     fn media(path: &Path, id: &str, start: f64, len: f64) -> Clip {
         Clip {
+            name: String::new(),
+            label: String::new(),
+            group: None,
+            link: None,
+            interpolation: "sampling".into(),
+            tail_fade: None,
             id: id.into(),
             source: Source::Media {
                 path: path.to_string_lossy().to_string(),
@@ -10388,6 +11505,8 @@ mod stress {
 
     fn track_of(id: &str, clips: Vec<Clip>) -> Track {
         Track {
+            sync_lock: true,
+            pan: 0.0,
             id: id.into(),
             name: id.into(),
             kind: TrackKind::Video,
@@ -10738,5 +11857,665 @@ mod stress {
                 "undo history would exceed 512 MB"
             );
         }
+    }
+}
+
+/// The Premiere feature set added on top of the original editor: title
+/// styling, generated bars, time interpolation, crossfades, the master bus,
+/// chapters, still export and the export-time options. Graph-shape tests run
+/// without ffmpeg; the rest render real files and probe them.
+#[cfg(test)]
+mod premiere_features {
+    use super::tests::{render_lock, scratch};
+    use super::*;
+
+    fn ffmpeg_available() -> bool {
+        Command::new("ffmpeg").arg("-version").output().is_ok()
+    }
+
+    fn base_clip(id: &str, source: Source, start: f64, a: f64, b: f64) -> Clip {
+        Clip {
+            id: id.into(),
+            source,
+            start,
+            in_point: a,
+            out_point: b,
+            speed: Param::Static(1.0),
+            reverse: false,
+            channels: vec![],
+            preserve_pitch: true,
+            gain: 1.0,
+            muted: false,
+            effects: vec![],
+            motion: Motion::default(),
+            blend: BlendMode::Normal,
+            transition_in: None,
+            name: String::new(),
+            label: String::new(),
+            group: None,
+            link: None,
+            interpolation: "sampling".into(),
+            tail_fade: None,
+        }
+    }
+
+    fn colour(id: &str, start: f64, len: f64) -> Clip {
+        base_clip(
+            id,
+            Source::Color {
+                color: "#336699".into(),
+            },
+            start,
+            0.0,
+            len,
+        )
+    }
+
+    fn media(id: &str, path: &Path, start: f64, a: f64, b: f64) -> Clip {
+        base_clip(
+            id,
+            Source::Media {
+                path: path.to_string_lossy().to_string(),
+            },
+            start,
+            a,
+            b,
+        )
+    }
+
+    fn track(id: &str, kind: TrackKind, clips: Vec<Clip>) -> Track {
+        Track {
+            id: id.into(),
+            name: id.into(),
+            kind,
+            clips,
+            muted: false,
+            hidden: false,
+            locked: false,
+            solo: false,
+            volume: 1.0,
+            opacity: 1.0,
+            blend: BlendMode::Normal,
+            targeted: false,
+            duck_under: None,
+            duck_threshold: 0.05,
+            duck_ratio: 8.0,
+            duck_attack: 20.0,
+            duck_release: 300.0,
+            sync_lock: true,
+            pan: 0.0,
+        }
+    }
+
+    fn marker(time: f64, name: &str, kind: &str, duration: f64) -> Marker {
+        Marker {
+            id: format!("m{time}"),
+            time,
+            name: name.into(),
+            colour: "#2C5FC9".into(),
+            comment: String::new(),
+            duration,
+            kind: kind.into(),
+        }
+    }
+
+    fn small(tracks: Vec<Track>) -> Project {
+        Project {
+            tracks,
+            width: 160,
+            height: 120,
+            fps: 10,
+            ..Default::default()
+        }
+    }
+
+    fn profile(id: &str) -> RenderProfile {
+        render_profiles().into_iter().find(|p| p.id == id).unwrap()
+    }
+
+    fn graph(args: &[String]) -> String {
+        args[args.iter().position(|a| a == "-filter_complex").unwrap() + 1].clone()
+    }
+
+    fn make_media(name: &str, secs: f64, freq: u32) -> PathBuf {
+        let path = scratch(&format!("odyssey-pf-{name}.mp4"));
+        let status = Command::new("ffmpeg")
+            .args(["-y", "-hide_banner", "-v", "error", "-f", "lavfi", "-i"])
+            .arg(format!("testsrc=size=160x120:rate=10:duration={secs}"))
+            .args(["-f", "lavfi", "-i"])
+            .arg(format!("sine=frequency={freq}:duration={secs}"))
+            .args([
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+            ])
+            .arg(&path)
+            .status()
+            .expect("ffmpeg should run");
+        assert!(status.success(), "could not build test media");
+        path
+    }
+
+    fn probe(path: &Path, entries: &str) -> String {
+        let out = Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                entries,
+                "-of",
+                "default=noprint_wrappers=1",
+            ])
+            .arg(path)
+            .output()
+            .expect("ffprobe should run");
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
+    // ------------------------------------------------------------ graph shape
+
+    #[test]
+    fn title_style_reaches_drawtext() {
+        let style = TitleStyle {
+            align: "left".into(),
+            valign: "lower-third".into(),
+            offset_x: 12.0,
+            stroke_width: 3.0,
+            stroke_color: "#ff0000".into(),
+            shadow: 4.0,
+            box_enabled: true,
+            box_color: "black@0.5".into(),
+            ..Default::default()
+        };
+        let f = title_drawtext("Name", 40.0, "white", &style, 3.0);
+        assert!(f.contains("x='w*0.06+(12.00)'"), "{f}");
+        assert!(f.contains("y='h*0.72+(0.00)'"), "{f}");
+        assert!(f.contains("borderw=3:bordercolor=#ff0000"), "{f}");
+        assert!(f.contains("shadowx=4:shadowy=4"), "{f}");
+        assert!(f.contains("box=1:boxcolor=black@0.5:boxborderw=16"), "{f}");
+    }
+
+    #[test]
+    fn rolling_and_crawling_titles_travel_over_the_clip() {
+        let roll = TitleStyle {
+            scroll: "roll".into(),
+            ..Default::default()
+        };
+        let f = title_drawtext("Credits", 40.0, "white", &roll, 4.0);
+        assert!(f.contains("y='h-(h+text_h)*t/4.0000"), "{f}");
+        let crawl = TitleStyle {
+            scroll: "crawl".into(),
+            ..Default::default()
+        };
+        let f = title_drawtext("News", 40.0, "white", &crawl, 4.0);
+        assert!(f.contains("x='w-(w+text_w)*t/4.0000"), "{f}");
+    }
+
+    #[test]
+    fn a_title_saved_before_styling_still_parses() {
+        let json =
+            r#"{"type":"title","text":"Old","background":"black","size":64,"color":"white"}"#;
+        let src: Source = serde_json::from_str(json).unwrap();
+        let Source::Title { style, .. } = src else {
+            panic!("not a title");
+        };
+        assert!(style.opaque);
+        assert_eq!(style.align, "center");
+    }
+
+    #[test]
+    fn transparent_titles_carry_alpha_from_the_source() {
+        let mut t = base_clip(
+            "t",
+            Source::Title {
+                text: "Lower third".into(),
+                background: "black".into(),
+                size: 30.0,
+                color: "white".into(),
+                style: Box::new(TitleStyle {
+                    opaque: false,
+                    ..Default::default()
+                }),
+            },
+            0.0,
+            0.0,
+            2.0,
+        );
+        t.effects.clear();
+        let args = render_args(
+            &small(vec![track("V1", TrackKind::Video, vec![t])]),
+            &profile("mp4-h264"),
+            Path::new("/tmp/o.mp4"),
+            None,
+        )
+        .unwrap();
+        assert!(args
+            .iter()
+            .any(|a| a.contains("color=c=black@0") && a.contains("yuva420p")));
+    }
+
+    #[test]
+    fn interpolation_only_changes_retimed_clips() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let src = make_media("interp-src", 1.0, 440);
+        let mut slow = media("s", &src, 0.0, 0.0, 1.0);
+        slow.speed = Param::Static(0.5);
+        slow.interpolation = "blending".into();
+        let mut flow = media("f", &src, 0.0, 0.0, 1.0);
+        flow.speed = Param::Static(0.5);
+        flow.interpolation = "optical".into();
+        let mut normal = media("n", &src, 0.0, 0.0, 1.0);
+        normal.interpolation = "optical".into();
+
+        let g = |c: Clip| {
+            graph(
+                &render_args(
+                    &small(vec![track("V1", TrackKind::Video, vec![c])]),
+                    &profile("mp4-h264"),
+                    Path::new("/tmp/o.mp4"),
+                    None,
+                )
+                .unwrap(),
+            )
+        };
+        assert!(g(slow).contains("framerate=fps=10"));
+        assert!(g(flow).contains("minterpolate=fps=10:mi_mode=mci"));
+        let plain = g(normal);
+        assert!(
+            !plain.contains("minterpolate") && plain.contains("fps=10"),
+            "{plain}"
+        );
+    }
+
+    #[test]
+    fn export_options_reach_the_graph() {
+        let mut p = small(vec![track(
+            "V1",
+            TrackKind::Video,
+            vec![colour("c", 0.0, 1.0)],
+        )]);
+        p.master_volume = 0.5;
+        let mut prof = profile("mp4-h264");
+        prof.height = Some(61);
+        prof.timecode = true;
+        prof.loudnorm = Some(-16.0);
+        let g = graph(&render_args(&p, &prof, Path::new("/tmp/o.mp4"), None).unwrap());
+        assert!(
+            g.contains("drawtext=timecode='00\\:00\\:00\\:00':rate=10"),
+            "{g}"
+        );
+        // Odd heights are made even for 4:2:0.
+        assert!(g.contains("scale=-2:60,format=yuv420p[vout]"), "{g}");
+    }
+
+    #[test]
+    fn slicing_rebases_markers_and_subtitles() {
+        let mut p = small(vec![track(
+            "V1",
+            TrackKind::Video,
+            vec![colour("c", 0.0, 10.0)],
+        )]);
+        p.markers = vec![
+            marker(1.0, "before", "chapter", 0.0),
+            marker(5.0, "in", "chapter", 0.0),
+        ];
+        p.subtitles = vec![Subtitle {
+            id: "s".into(),
+            start: 3.0,
+            end: 6.0,
+            text: "straddles".into(),
+        }];
+        let sliced = slice(&p, 4.0, 8.0);
+        assert_eq!(sliced.markers.len(), 1);
+        assert!((sliced.markers[0].time - 1.0).abs() < 1e-9);
+        assert_eq!(sliced.subtitles.len(), 1);
+        assert!((sliced.subtitles[0].start - 0.0).abs() < 1e-9);
+        assert!((sliced.subtitles[0].end - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn chapter_metadata_orders_escapes_and_ends_chapters() {
+        let mut p = small(vec![track(
+            "V1",
+            TrackKind::Video,
+            vec![colour("c", 0.0, 10.0)],
+        )]);
+        assert!(chapter_metadata(&p).is_none());
+        p.markers = vec![
+            marker(6.0, "Two; the end", "chapter", 0.0),
+            marker(0.0, "", "chapter", 2.0),
+            marker(3.0, "not a chapter", "comment", 0.0),
+        ];
+        let doc = chapter_metadata(&p).unwrap();
+        assert!(doc.starts_with(";FFMETADATA1\n"));
+        assert!(
+            doc.contains("START=0\nEND=2000\ntitle=Chapter 1\n"),
+            "{doc}"
+        );
+        assert!(
+            doc.contains("START=6000\nEND=10000\ntitle=Two\\; the end\n"),
+            "{doc}"
+        );
+        assert!(!doc.contains("not a chapter"));
+    }
+
+    #[test]
+    fn chapters_input_follows_media_inputs() {
+        let args: Vec<String> = [
+            "-y",
+            "-i",
+            "a.mp4",
+            "-i",
+            "b.mp4",
+            "-filter_complex",
+            "g",
+            "-t",
+            "1",
+            "out.mp4",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let out = with_chapters(args, Path::new("ch.txt"));
+        let fc = out.iter().position(|a| a == "-filter_complex").unwrap();
+        assert_eq!(out[fc - 1], "ch.txt");
+        assert_eq!(out[fc - 2], "-i");
+        let n = out.len();
+        assert_eq!(&out[n - 3..], ["-map_chapters", "2", "out.mp4"]);
+    }
+
+    #[test]
+    fn tint_and_colour_parsing_are_closed_sets() {
+        assert_eq!(parse_rgb("#ff8000", (1, 1, 1)), (255, 128, 0));
+        assert_eq!(parse_rgb("white", (1, 1, 1)), (255, 255, 255));
+        assert_eq!(parse_rgb("'; drop", (1, 2, 3)), (1, 2, 3));
+        assert_eq!(parse_rgb("navy", (1, 1, 1)), (0, 0, 128));
+        assert_eq!(parse_rgb("0x00FF80@0.5", (1, 1, 1)), (0, 255, 128));
+        assert_eq!(sanitise_curve("qsin"), "qsin");
+        assert_eq!(sanitise_curve("nope:x=1"), "tri");
+        let c = Effect::Tint {
+            black: "black".into(),
+            white: "white".into(),
+            amount: 1.0,
+        }
+        .compile(1.0, 160, 120, 10);
+        // Black to white at full strength is plain luma: 0.299 of red in red.
+        assert!(
+            c.filters.iter().any(|f| f.contains("rr=0.29900")),
+            "{:?}",
+            c.filters
+        );
+    }
+
+    #[test]
+    fn audio_transitions_become_crossfades_with_their_curve() {
+        let mut a = colour("a", 0.0, 2.0);
+        a.source = Source::Bars;
+        let mut b = colour("b", 2.0, 2.0);
+        b.source = Source::Bars;
+        b.in_point = 1.0;
+        b.out_point = 3.0;
+        b.transition_in = Some(Transition {
+            kind: TransitionKind::Dissolve,
+            duration: 0.5,
+            curve: "exp".into(),
+        });
+        let mut t = track("A1", TrackKind::Audio, vec![a, b]);
+        t.pan = -0.5;
+        let p = small(vec![t]);
+        let g =
+            graph(&render_args(&p, &profile("mp3-audio"), Path::new("/tmp/o.mp3"), None).unwrap());
+        assert!(g.contains("afade=t=in:st=0:d=0.5000:curve=exp"), "{g}");
+        assert!(
+            g.contains("afade=t=out:st=2.0000:d=0.5000:curve=exp"),
+            "{g}"
+        );
+        assert!(g.contains("pan=stereo|c0=1.0000*c0|c1=0.5000*c1"), "{g}");
+    }
+
+    #[test]
+    fn autosave_keeps_fields_rust_does_not_model() {
+        let dir = scratch("odyssey-pf-autosave");
+        let _ = std::fs::remove_dir_all(&dir);
+        let value = serde_json::json!({
+            "tracks": [{"id": "t", "kind": "video", "clips": [{
+                "id": "c", "source": {"type": "color", "color": "red"},
+                "out_point": 1.0,
+                "effects": [{"kind": "blur", "sigma": 2.0, "enabled": false}]
+            }]}]
+        });
+        serde_json::from_value::<Project>(value.clone()).unwrap();
+        let path = autosave(&value, "item", &dir).unwrap();
+        let back: serde_json::Value = restore_autosave(&path).unwrap();
+        assert_eq!(
+            back["tracks"][0]["clips"][0]["effects"][0]["enabled"],
+            false
+        );
+    }
+
+    // ------------------------------------------------------------ real renders
+
+    #[test]
+    fn bars_and_tone_render_picture_and_sound() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let mut bars = colour("b", 0.0, 1.0);
+        bars.source = Source::Bars;
+        let out = scratch("odyssey-pf-bars.mp4");
+        render(
+            &small(vec![track("V1", TrackKind::Video, vec![bars])]),
+            &profile("mp4-h264-fast"),
+            &out,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let streams = probe(&out, "stream=codec_type");
+        assert!(
+            streams.contains("video") && streams.contains("audio"),
+            "{streams}"
+        );
+    }
+
+    #[test]
+    fn styled_transparent_and_rolling_titles_render() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let title = |id: &str, style: TitleStyle| {
+            base_clip(
+                id,
+                Source::Title {
+                    text: "Line one\nLine two: 100%".into(),
+                    background: "#101820".into(),
+                    size: 18.0,
+                    color: "white".into(),
+                    style: Box::new(style),
+                },
+                0.0,
+                0.0,
+                1.0,
+            )
+        };
+        let under = colour("u", 0.0, 1.0);
+        let lower = title(
+            "l",
+            TitleStyle {
+                opaque: false,
+                valign: "lower-third".into(),
+                align: "left".into(),
+                stroke_width: 2.0,
+                shadow: 2.0,
+                box_enabled: true,
+                ..Default::default()
+            },
+        );
+        let mut rolling = title(
+            "r",
+            TitleStyle {
+                scroll: "roll".into(),
+                ..Default::default()
+            },
+        );
+        rolling.start = 1.0;
+        let p = small(vec![
+            track("V1", TrackKind::Video, vec![under, rolling]),
+            track("V2", TrackKind::Video, vec![lower]),
+        ]);
+        let out = scratch("odyssey-pf-titles.mp4");
+        render(&p, &profile("mp4-h264-fast"), &out).unwrap_or_else(|e| panic!("{e}"));
+        let dur: f64 = probe(&out, "format=duration")
+            .trim()
+            .trim_start_matches("duration=")
+            .parse()
+            .unwrap();
+        assert!((dur - 2.0).abs() < 0.3, "expected ~2s, got {dur}");
+    }
+
+    #[test]
+    fn interpolated_slow_motion_renders() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let src = make_media("slowmo", 0.6, 440);
+        for mode in ["blending", "optical"] {
+            let mut c = media("c", &src, 0.0, 0.0, 0.6);
+            c.speed = Param::Static(0.5);
+            c.interpolation = mode.into();
+            let out = scratch(&format!("odyssey-pf-slowmo-{mode}.mp4"));
+            render(
+                &small(vec![track("V1", TrackKind::Video, vec![c])]),
+                &profile("mp4-h264-fast"),
+                &out,
+            )
+            .unwrap_or_else(|e| panic!("{mode}: {e}"));
+            assert!(out.exists());
+        }
+    }
+
+    #[test]
+    fn crossfade_pan_master_and_loudness_render() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let a = make_media("xfade-a", 2.0, 440);
+        let b = make_media("xfade-b", 2.0, 660);
+        let first = media("a", &a, 0.0, 0.0, 1.0);
+        let mut second = media("b", &b, 1.0, 0.5, 1.5);
+        second.transition_in = Some(Transition {
+            kind: TransitionKind::Dissolve,
+            duration: 0.4,
+            curve: "qsin".into(),
+        });
+        let mut music = track("A1", TrackKind::Audio, vec![first, second]);
+        music.pan = 0.4;
+        let mut p = small(vec![music]);
+        p.master_volume = 0.8;
+        let mut prof = profile("wav-audio");
+        prof.loudnorm = Some(-20.0);
+        let out = scratch("odyssey-pf-xfade.wav");
+        render(&p, &prof, &out).unwrap_or_else(|e| panic!("{e}"));
+        assert!(probe(&out, "stream=codec_name").contains("pcm_s16le"));
+
+        let m4a = scratch("odyssey-pf-xfade.m4a");
+        render(&p, &profile("m4a-aac"), &m4a).unwrap_or_else(|e| panic!("{e}"));
+        assert!(probe(&m4a, "stream=codec_name").contains("aac"));
+    }
+
+    #[test]
+    fn chapter_markers_are_written_into_the_export() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let mut p = small(vec![track(
+            "V1",
+            TrackKind::Video,
+            vec![colour("c", 0.0, 2.0)],
+        )]);
+        p.markers = vec![
+            marker(0.0, "Open", "chapter", 0.0),
+            marker(1.0, "Close", "chapter", 0.0),
+        ];
+        let out = scratch("odyssey-pf-chapters.mp4");
+        render(&p, &profile("mp4-h264-fast"), &out).unwrap_or_else(|e| panic!("{e}"));
+        let found = Command::new("ffprobe")
+            .args(["-v", "error", "-show_chapters", "-of", "json"])
+            .arg(&out)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&found.stdout);
+        assert!(
+            text.contains("\"Open\"") && text.contains("\"Close\""),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn scaled_export_with_timecode_has_the_requested_height() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let p = small(vec![track(
+            "V1",
+            TrackKind::Video,
+            vec![colour("c", 0.0, 1.0)],
+        )]);
+        let mut prof = profile("mp4-h264-fast");
+        prof.height = Some(60);
+        prof.timecode = true;
+        let out = scratch("odyssey-pf-scaled.mp4");
+        render(&p, &prof, &out).unwrap_or_else(|e| panic!("{e}"));
+        let dims = probe(&out, "stream=width,height");
+        assert!(
+            dims.contains("width=80") && dims.contains("height=60"),
+            "{dims}"
+        );
+    }
+
+    #[test]
+    fn export_frame_writes_a_still_at_sequence_size() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let src = make_media("frame", 1.0, 440);
+        let p = small(vec![track(
+            "V1",
+            TrackKind::Video,
+            vec![media("c", &src, 0.0, 0.0, 1.0)],
+        )]);
+        let out = scratch("odyssey-pf-frame.png");
+        let _ = std::fs::remove_file(&out);
+        export_frame(&p, 0.5, &out).unwrap_or_else(|e| panic!("{e}"));
+        let dims = probe(&out, "stream=width,height");
+        assert!(
+            dims.contains("width=160") && dims.contains("height=120"),
+            "{dims}"
+        );
+        // Past the end clamps to the last frame rather than failing.
+        export_frame(&p, 99.0, &out).unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    #[test]
+    fn audio_peak_measures_a_real_source() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let src = make_media("peak", 1.0, 440);
+        let peak = audio_peak(&src.to_string_lossy(), 0.2, 0.8).unwrap_or_else(|e| panic!("{e}"));
+        // ffmpeg's sine source peaks at 1/8 of full scale: about -18 dBFS.
+        assert!((-24.0..-12.0).contains(&peak), "peak {peak}");
     }
 }

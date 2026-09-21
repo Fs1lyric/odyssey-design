@@ -89,23 +89,49 @@ timeline preview renders are therefore VP8 in WebM, which plays wherever the
 base plugins exist. Export is unaffected and still offers H.264, H.265, VP9,
 ProRes and MP3.
 
-## The preview is an approximation
+## The preview mirrors the graph
 
-The monitor is a canvas compositor: one hidden `<video>` element per active
-clip, drawn in track order with opacity, blend modes and the effects a canvas
-filter can express. It is not the renderer, and it does not pretend to be.
+The monitor does not approximate the render with canvas filters. It rebuilds
+each clip's chain the way `render_args` in timeline.rs does (`src/fxpipe.ts`):
 
-Two divergences are deliberate and documented in the code:
+1. The source is fitted inside the frame, and padded to it in black when the
+   clip has no motion, because that pad is what covers the tracks beneath.
+2. Effects run **in order** on that layer. Colour and pixel effects are WebGL2
+   fragment shaders; geometry (crop, rotate, transform, transpose, reframe)
+   runs on 2D canvases because it changes the layer's size.
+3. The head transition runs, then motion places the layer centred, as the
+   overlay's `(main_w-overlay_w)/2` does.
 
-- ffmpeg's `eq` brightness is additive; the canvas `brightness()` filter is
-  multiplicative, so preview brightness is approximate.
-- Chroma key, vignette, crop, rotate and frei0r have no canvas equivalent and
-  appear only in the export.
+The timeline itself goes through `applyTransitions`, a port of
+`apply_transitions`, so a dissolve's overlap lands at the same instant in the
+monitor as in the file. Adjustment layers grade a snapshot of the composite so
+far, the way the renderer gates their filters onto the running output.
 
-Where the two disagree, ffmpeg is correct. Timeline preview rendering exists
-for when that matters: a span is rendered once and played back as a file, and
-the monitor labels itself so rendered output is never mistaken for a live
-composite.
+The shaders are written against the filters' own arithmetic, and a few details
+matter more than they look: `eq` works on limited-range luma codes;
+`colorbalance`'s "lightness" is max+min, not their mean; `gblur`, `boxblur`
+and `convolution` size each plane in its own pixels, so chroma spreads twice as
+far on 4:2:0 video; Tint clips its channel mix before adding its offset.
+
+**Parity is measured, not claimed.** `cargo test preview_parity_fixtures --
+--ignored` renders a still through the real export path once per effect, and
+`scripts/preview-parity` runs the same effect JSON through the pipeline in a
+browser and reports the per-pixel difference. The check has already caught
+export bugs, not only preview ones: `geq` ignores its `lum`/`cb`/`cr`
+expressions on RGB input, so Mirror and Scanlines exported black frames for
+stills until the format was pinned to YUV first.
+
+**What the GPU path cannot do, the monitor says.** frei0r plugins, LUTs,
+temporal filters (motion blur, denoisers, stabilisation), nested sequences and
+the blend modes a canvas lacks are listed on the monitor. While the playhead
+rests on such a frame, `preview_frame` renders it through the export graph,
+caches it by the content hash of the slice it depends on, and the monitor
+shows that, labelled "Exact frame". During playback those effects are absent,
+which the label also says.
+
+Timeline preview rendering remains for playing heavy spans at speed: a span is
+rendered once and played back as a file, and the monitor labels itself so
+rendered output is never mistaken for a live composite.
 
 **Proxies are preview-only, and that contract is enforced by a test.** The
 renderer never reads one. An export that silently used a proxy would ship a

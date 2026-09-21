@@ -52,8 +52,14 @@ vertically to move it to another track; drag its edges to trim. Audio-only files
 land on an audio track automatically. Per-track mute, hide, lock and volume.
 Zoom from 4 to 400 pixels per second.
 
-**Preview.** A canvas compositor draws the project live: every active clip on
-every visible track, in track order, with opacity and fades applied. Transport
+**Preview.** The monitor composites the project live through a GPU pipeline
+that mirrors the export graph: each clip is fitted, run through its effects in
+order on its own layer, given its transition and motion, and blended in track
+order. Effects are WebGL shaders written against the ffmpeg filters' own
+formulas, and `scripts/preview-parity` measures every one against a frame
+ffmpeg rendered. What no shader can reproduce (frei0r plugins, LUTs, temporal
+filters, nested sequences, blend modes a canvas lacks) the monitor names, and
+while the playhead rests it shows the exact ffmpeg frame instead. Transport
 is play/pause, frame step, home/end, and a scrubbable ruler. Keyboard: space to
 play, S to split at the playhead, Delete to remove, arrows to step a frame,
 shift+arrows to step a second, Ctrl+Z / Ctrl+Shift+Z to undo and redo.
@@ -62,8 +68,9 @@ shift+arrows to step a second, Ctrl+Z / Ctrl+Shift+Z to undo and redo.
 keying, compositing, text and repair, and 45 audio — **plus every frei0r plugin
 installed on the machine**, browsable by name from the inspector. That is the
 same plugin library Kdenlive draws on; this machine has 166, for 301 effects in
-total. Alongside them are 30 transitions and 42 blend modes, each previewed by
-the compositor exactly as the export writes it.
+total. Alongside them are 30 transitions and 42 blend modes. Every transition
+previews live; the thirteen blend modes a canvas has preview live and the rest
+show as exact frames when parked.
 
 **Keyframes on every numeric parameter**, with 28 interpolation curves —
 linear and hold, the ease family, and sine, cubic, quart, quint, expo, circ,
@@ -124,17 +131,25 @@ audio with compositing, undo, keyframes on every numeric parameter, effects and
 colour correction including the full frei0r library, titles and text overlays,
 speed changes, reverse, time remapping, and render profiles.
 
-Still missing: motion tracking, masks, and nested sequences.
+Also covered: ripple, roll, slip and slide with a two-up trim monitor and a
+numeric readout; nested sequences edited in place with a breadcrumb back out;
+an EBU R128 meter (momentary, short-term, integrated) on the master bus plus
+an ffmpeg `ebur128` measurement of the actual export; mask tracking, with text
+that can follow the tracked mask; and multicam, with angles synced by their
+audio (GCC-PHAT) and cut live from a grid with 1–9.
 
-Preview divergences, documented rather than hidden: the preview is silent, so
-audio cannot be scrubbed by ear; ffmpeg's `eq` brightness is additive while the
-canvas filter is multiplicative, so preview brightness is approximate; and
-chroma key, vignette, crop, rotate and frei0r have no canvas equivalent, so they
-appear only in the export. ffmpeg is always the authority on the final output.
+Preview fidelity, measured rather than asserted: `scripts/preview-parity`
+renders a test still through the real export path once per effect and compares
+it with the monitor's output. For 41 effects, among them crop, rotate, chroma
+key, vignette, masks, tint and curves, the mean difference is 0.3 to 5.7 levels
+out of 255 against a 2.2 floor from 4:2:0 chroma alone. Effects the GPU path
+does not cover are listed on the monitor, which switches to ffmpeg's own frame
+whenever the playhead rests. ffmpeg is always the authority on the final
+output.
 
-One renderer limitation: `sendcmd` targets a filter by name, so
-two animated effects of the same kind on one clip receive each other's
-commands.
+`sendcmd` targets a filter by name, so each command-driven effect is isolated
+in its own filter chain; two animated effects of the same kind on one clip do
+not interfere, and a regression test holds that.
 
 ## Installing
 
