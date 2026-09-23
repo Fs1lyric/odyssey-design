@@ -3150,7 +3150,17 @@ export function mountVideo(
                 ["720", "720p"], ["540", "540p"], ["480", "480p"], ["360", "360p"],
               ], (v) => { chosen.height = Number(v) || null; }),
               checkField("Burn in timecode", chosen.timecode, (v) => { chosen.timecode = v; }),
+              checkField("Decode sources on the GPU", chosen.hw_decode, (v) => { chosen.hw_decode = v; }),
             );
+            if (hardware.some((p) => p.video_codec === chosen.video_codec)) {
+              const note = document.createElement("p");
+              note.className = "vid__hint";
+              // A GPU encoder is fast rather than efficient. Saying so here is
+              // cheaper than someone concluding the editor exports badly.
+              note.textContent = "GPU encoders trade quality for speed at a given bitrate. "
+                + "Raise the bitrate rather than lowering it, or export with a software profile for a master.";
+              settings.appendChild(note);
+            }
           }
           settings.appendChild(selectField("Loudness normalization", String(chosen.loudnorm ?? ""), [
             ["", "Off"], ["-14", "-14 LUFS (streaming)"], ["-16", "-16 LUFS (podcast, web)"],
@@ -3173,6 +3183,7 @@ export function mountVideo(
             chosen.height ??= null;
             chosen.loudnorm ??= null;
             chosen.timecode ??= false;
+            chosen.hw_decode ??= false;
             drawSettings();
           });
           const text = document.createElement("span");

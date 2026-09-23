@@ -69,6 +69,64 @@ segments cut at eight per second, each with its own trim, `setpts` and staged
 position in the source rather than the timeline, so a ramp survives the clip
 being moved.
 
+### GPU acceleration is three separate things
+
+"Use the GPU" names three unrelated mechanisms in a video editor, and this
+codebase does two of them. The monitor's shaders composite for the screen
+(below). The export path decodes and encodes on the GPU. The compositing
+*between* those two ends stays in software filters, because moving it would
+mean a second renderer written in hardware filters rather than a flag —
+`overlay_vaapi` is not `overlay`, and every effect would need a second
+implementation with its own parity problem.
+
+**Encoders are offered only after they have run.** `ffmpeg -encoders` lists
+what ffmpeg was compiled with. A distribution build advertises `h264_nvenc` on
+a laptop with no NVIDIA card, `h264_qsv` on AMD, and `h264_vaapi` where
+`/dev/dri` does not exist or the user is not in the `render` group. On the
+machine this was written on, ffmpeg advertises thirteen hardware encoders and
+two of them work. So `hw.rs` asks each candidate to encode two frames of
+`testsrc` to `null`, in parallel, once per process, and lists the survivors.
+The VA-API render node is found the same way: the nodes under `/dev/dri` are
+tried in order and the first that accepts an upload is kept, with
+`ODYSSEY_VAAPI_DEVICE` overriding on machines with two GPUs where the wrong
+guess is the slow one.
+
+**The graph changes shape per family.** NVENC, AMF and VideoToolbox take
+ordinary software frames, so they are a codec substitution and nothing more.
+VA-API and QSV take GPU surfaces, and three things have to be true together or
+the encoder refuses to open:
+
+| | software-frame families | surface families |
+|---|---|---|
+| Device | none | `-init_hw_device` **and** `-filter_hw_device`, before the first input |
+| End of the graph | `format=yuv420p` | `format=nv12,hwupload` |
+| Output `-pix_fmt` | `yuv420p` | must be absent |
+
+The last row is the one that bites: frames reaching a surface encoder are GPU
+handles rather than planes, so `-pix_fmt yuv420p` sends ffmpeg looking for a
+conversion that does not exist, and it reports an encoder it could not open
+rather than an option it did not like. QSV on Linux is initialised as a VA-API
+child (`qsv=hw@va`) so it shares surfaces with the driver that owns the card;
+on Windows the D3D11 default is right and a render node would be wrong.
+
+Preset names in a profile are x264's, because that is the vocabulary the
+interface uses. Each family gets them translated rather than passed through:
+NVENC wants `p1`–`p7`, AMF wants one of three words, and VA-API and
+VideoToolbox have no preset and reject the option.
+
+**Decoding asks for `auto` rather than a method.** `-hwaccel auto` is chosen
+per input and per codec and falls back to software for the files the GPU does
+not know, which is what a timeline mixing camera H.264 with a VP9 screen
+recording needs. No `-hwaccel_output_format` is set, so frames come back to
+system memory for the filter graph — keeping them on the card is the second
+renderer again. Proxy building takes the same treatment, since it is
+decode-bound by construction: a full-resolution source in, a small picture out.
+
+**Parity here is also measured.** `every_hardware_profile_renders` exports a
+two-track composite through every profile the machine offers and probes the
+result. The probe already promises the encoder initialises, which is a smaller
+claim than the compositing graph reaching it intact.
+
 ## Constraints discovered the hard way
 
 **A filter graph travels as one argument.** Linux refuses any single argument
