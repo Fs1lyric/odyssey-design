@@ -448,8 +448,15 @@ pub fn create_proxy(source: &str, width: u32, cache_dir: &Path) -> Result<Proxy>
     // Note a proxy is not necessarily smaller on disk: for already-small or
     // highly compressible footage it can be larger. That is fine. The point is
     // decode cost, which falls with the pixel count, not bytes on disk.
+    // Building a proxy is decode-bound: a full-resolution source in, a small
+    // picture out. The GPU decodes it where it can and ffmpeg falls back per
+    // codec where it cannot, so this costs nothing when it does not apply.
+    // The encode stays VP8 in software, because the proxy has to play in the
+    // webview and no GPU encodes VP8.
     let out = Command::new("ffmpeg")
-        .args(["-y", "-hide_banner", "-v", "error", "-i"])
+        .args(["-y", "-hide_banner", "-v", "error"])
+        .args(crate::hw::decode_args())
+        .arg("-i")
         .arg(&canonical)
         .args([
             "-vf",

@@ -3406,6 +3406,11 @@ pub struct RenderProfile {
     /// Burn a running timecode into the picture.
     #[serde(default)]
     pub timecode: bool,
+    /// Decode sources on the GPU where the machine can. Chosen per input and
+    /// per codec, falling back to software for the files it cannot, so a
+    /// mixed timeline accelerates what it can rather than failing.
+    #[serde(default)]
+    pub hw_decode: bool,
 }
 
 fn d_abr() -> String {
@@ -3478,56 +3483,53 @@ fn humanise(name: &str) -> String {
     }
 }
 
-/// Encoders this ffmpeg can actually use. Offering a profile the machine
-/// cannot run is worse than not offering it, so the list is probed rather
-/// than assumed.
+/// Encoders this machine can actually use.
+///
+/// Probed rather than assumed, and probed by running them: see `hw.rs` for why
+/// `ffmpeg -encoders` is not an answer to this question.
 pub fn hardware_encoders() -> Vec<String> {
-    let Ok(out) = Command::new("ffmpeg")
-        .args(["-hide_banner", "-encoders"])
-        .output()
-    else {
-        return Vec::new();
-    };
-    let text = String::from_utf8_lossy(&out.stdout);
-    [
-        "h264_nvenc",
-        "h264_vaapi",
-        "h264_qsv",
-        "hevc_nvenc",
-        "hevc_vaapi",
-    ]
-    .into_iter()
-    .filter(|e| text.contains(e))
-    .map(str::to_string)
-    .collect()
+    crate::hw::encoders()
 }
 
-/// Render profiles that use the GPU, appended only when the encoder exists.
+/// Render profiles that use the GPU, appended only when the encoder runs here.
 pub fn hardware_profiles() -> Vec<RenderProfile> {
     hardware_encoders()
         .into_iter()
         .map(|enc| {
             let label = match enc.as_str() {
-                "h264_nvenc" => "MP4 · H.264 · NVIDIA GPU",
-                "h264_vaapi" => "MP4 · H.264 · VAAPI GPU",
+                "h264_nvenc" => "MP4 · H.264 · NVIDIA NVENC",
+                "hevc_nvenc" => "MP4 · H.265 · NVIDIA NVENC",
+                "av1_nvenc" => "MP4 · AV1 · NVIDIA NVENC",
                 "h264_qsv" => "MP4 · H.264 · Intel Quick Sync",
-                "hevc_nvenc" => "MP4 · H.265 · NVIDIA GPU",
-                _ => "MP4 · H.265 · VAAPI GPU",
+                "hevc_qsv" => "MP4 · H.265 · Intel Quick Sync",
+                "av1_qsv" => "MP4 · AV1 · Intel Quick Sync",
+                "h264_vaapi" => "MP4 · H.264 · VAAPI GPU",
+                "hevc_vaapi" => "MP4 · H.265 · VAAPI GPU",
+                "av1_vaapi" => "MP4 · AV1 · VAAPI GPU",
+                "h264_videotoolbox" => "MP4 · H.264 · VideoToolbox",
+                "hevc_videotoolbox" => "MP4 · H.265 · VideoToolbox",
+                "h264_amf" => "MP4 · H.264 · AMD AMF",
+                _ => "MP4 · H.265 · AMD AMF",
             };
             RenderProfile {
                 id: format!("hw-{enc}"),
                 label: label.into(),
                 container: "mp4".into(),
+                // AV1 carries the same picture in less, so the default target
+                // is lower rather than wasted.
+                video_bitrate: Some(if enc.starts_with("av1") { "8M" } else { "12M" }.into()),
                 video_codec: enc,
                 audio_codec: "aac".into(),
                 crf: None,
-                // Hardware encoders take a bitrate, not a CRF.
-                video_bitrate: Some("12M".into()),
                 audio_bitrate: "192k".into(),
                 preset: "medium".into(),
                 height: None,
                 loudnorm: None,
                 timecode: false,
+                // A GPU export is bottlenecked on decode once the encoder
+                // stops being the slow part, so the profile that chose the GPU
+                // for one half asks for it in the other.
+                hw_decode: true,
             }
         })
         .collect()
@@ -3651,6 +3653,7 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             height: None,
             loudnorm: None,
             timecode: false,
+            hw_decode: false,
         },
         RenderProfile {
             id: "mp4-h264-fast".into(),
@@ -3665,6 +3668,7 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             height: None,
             loudnorm: None,
             timecode: false,
+            hw_decode: false,
         },
         RenderProfile {
             id: "mp4-h265".into(),
@@ -3679,6 +3683,7 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             height: None,
             loudnorm: None,
             timecode: false,
+            hw_decode: false,
         },
         RenderProfile {
             id: "webm-vp9".into(),
@@ -3693,6 +3698,7 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             height: None,
             loudnorm: None,
             timecode: false,
+            hw_decode: false,
         },
         RenderProfile {
             id: "mov-prores".into(),
@@ -3707,6 +3713,7 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             height: None,
             loudnorm: None,
             timecode: false,
+            hw_decode: false,
         },
         RenderProfile {
             id: "mp3-audio".into(),
@@ -3721,6 +3728,7 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             height: None,
             loudnorm: None,
             timecode: false,
+            hw_decode: false,
         },
         RenderProfile {
             id: "wav-audio".into(),
@@ -3735,6 +3743,7 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             height: None,
             loudnorm: None,
             timecode: false,
+            hw_decode: false,
         },
         RenderProfile {
             id: "m4a-aac".into(),
@@ -3749,6 +3758,7 @@ pub fn render_profiles() -> Vec<RenderProfile> {
             height: None,
             loudnorm: None,
             timecode: false,
+            hw_decode: false,
         },
     ]
 }
@@ -3824,14 +3834,28 @@ struct Input {
     has_audio: bool,
 }
 
-fn build_input(clip: &Clip, project: &Project, index: usize, src_len: f64) -> Result<Input> {
+fn build_input(
+    clip: &Clip,
+    project: &Project,
+    index: usize,
+    src_len: f64,
+    hw_decode: bool,
+) -> Result<Input> {
     let dur = src_len;
     match &clip.source {
         Source::Media { path } => {
             let src = canonical_source(path)?;
             let has_audio = source_has_audio(&src);
+            // Only a real file is decoded. The generated inputs below are
+            // lavfi graphs and stills, which have no decoder to accelerate.
+            let mut args: Vec<String> = Vec::new();
+            if hw_decode {
+                args.extend(crate::hw::decode_args().iter().map(|s| s.to_string()));
+            }
+            args.push("-i".into());
+            args.push(src.to_string_lossy().to_string());
             Ok(Input {
-                args: vec!["-i".into(), src.to_string_lossy().to_string()],
+                args,
                 index,
                 has_audio,
             })
@@ -3979,7 +4003,15 @@ pub fn render_args(
 
     let total = project.duration();
     let wants_video = profile.video_codec != "none";
+    // The encoder family decides the shape of the graph's tail and whether a
+    // device has to exist before the first input, so it is settled up front.
+    let gpu = wants_video
+        .then(|| crate::hw::Family::of(&profile.video_codec))
+        .flatten();
     let mut args: Vec<String> = vec!["-y".into(), "-hide_banner".into()];
+    if let Some(family) = gpu {
+        args.extend(family.device_args());
+    }
     let mut filters: Vec<String> = Vec::new();
     enum Composite {
         /// A picture laid on top of what is beneath it.
@@ -4018,7 +4050,13 @@ pub fn render_args(
     for track in &project.tracks {
         for clip in &track.clips {
             for seg in clip.segments() {
-                let input = build_input(clip, project, index, seg.src_end - seg.src_start)?;
+                let input = build_input(
+                    clip,
+                    project,
+                    index,
+                    seg.src_end - seg.src_start,
+                    profile.hw_decode,
+                )?;
                 index += 1;
                 pieces.push(Piece {
                     input,
@@ -4624,7 +4662,13 @@ box=1:boxcolor=black@0.6:boxborderw=8:x=(w-text_w)/2:y=h-text_h-{margin}",
             // -2 keeps the width even, which every 4:2:0 encoder needs.
             finish.push(format!("scale=-2:{}", h - h % 2));
         }
-        finish.push("format=yuv420p".into());
+        // A surface encoder is handed nv12 on the GPU; everything else is
+        // handed planes in memory. Scaling above stays in software either way,
+        // so the upload is the last thing that happens.
+        match gpu {
+            Some(family) if family.uploads() => finish.extend(family.upload_filters()),
+            _ => finish.push("format=yuv420p".into()),
+        }
         filters.push(format!("[{current}]{}[vout]", finish.join(",")));
         Some("vout".to_string())
     } else {
@@ -4789,6 +4833,9 @@ attack={:.1}:release={:.1}[{out}]",
                 args.push("8".into());
             }
         }
+        if let Some(family) = gpu {
+            args.extend(family.encoder_args(&profile.preset));
+        }
         if let Some(br) = &profile.video_bitrate {
             args.push("-b:v".into());
             args.push(br.clone());
@@ -4796,8 +4843,13 @@ attack={:.1}:release={:.1}[{out}]",
             args.push("-crf".into());
             args.push(crf.to_string());
         }
-        args.push("-pix_fmt".into());
-        args.push("yuv420p".into());
+        // Frames reaching a surface encoder are GPU handles, not planes, and
+        // asking for a planar output format makes ffmpeg look for a conversion
+        // that does not exist and refuse the encoder outright.
+        if !gpu.is_some_and(|f| f.uploads()) {
+            args.push("-pix_fmt".into());
+            args.push("yuv420p".into());
+        }
     }
 
     if final_audio.is_some() {
@@ -5569,6 +5621,7 @@ pub fn preview_profile() -> RenderProfile {
         height: None,
         loudnorm: None,
         timecode: false,
+        hw_decode: false,
     }
 }
 
@@ -5913,6 +5966,7 @@ pub fn export_frame(project: &Project, at: f64, output: &Path) -> Result<String>
         height: None,
         loudnorm: None,
         timecode: false,
+        hw_decode: false,
     };
     let args = render_args(&sliced, &profile, output, None)?;
     let mut kept: Vec<String> = Vec::with_capacity(args.len() + 4);
@@ -6004,6 +6058,7 @@ pub fn measure_loudness(project: &Project, cache_dir: &Path) -> Result<LoudnessR
         height: None,
         loudnorm: None,
         timecode: false,
+        hw_decode: false,
     };
     let args = render_args(&flat, &profile, &wav, None)?;
     let rendered = execute(args);
@@ -7944,6 +7999,190 @@ pub(crate) mod tests {
             assert!(p.crf.is_none(), "{} should not use CRF", p.id);
             assert!(p.video_bitrate.is_some(), "{} needs a bitrate", p.id);
             assert!(p.id.starts_with("hw-"));
+        }
+    }
+
+    /// A profile the GPU tests can build without a GPU being present. The
+    /// argument shape is a property of the encoder name, not of the machine.
+    fn gpu_profile(codec: &str) -> RenderProfile {
+        RenderProfile {
+            video_codec: codec.into(),
+            crf: None,
+            video_bitrate: Some("12M".into()),
+            ..profile()
+        }
+    }
+
+    #[test]
+    fn a_surface_encoder_uploads_its_frames_and_is_given_no_pixel_format() {
+        let s = temp_source("hwup");
+        let p = Project {
+            tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)])],
+            ..Default::default()
+        };
+        for codec in ["h264_vaapi", "hevc_vaapi", "h264_qsv"] {
+            let args = render_args(&p, &gpu_profile(codec), Path::new("/tmp/o.mp4"), None).unwrap();
+            let joined = args.join(" ");
+            assert!(
+                joined.contains("hwupload"),
+                "{codec} takes GPU surfaces, so the graph must end in an upload: {joined}"
+            );
+            assert!(
+                joined.contains("format=nv12,hwupload"),
+                "{codec} uploads nv12, not the planar format a software encoder wants"
+            );
+            // -pix_fmt on a surface encoder asks ffmpeg for a conversion that
+            // does not exist, and it refuses the encoder rather than the flag.
+            assert!(
+                !joined.contains("-pix_fmt"),
+                "{codec} must not be given an output pixel format: {joined}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_software_frame_encoder_keeps_the_planar_output() {
+        let s = temp_source("hwsw");
+        let p = Project {
+            tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)])],
+            ..Default::default()
+        };
+        for codec in ["h264_nvenc", "hevc_videotoolbox", "h264_amf"] {
+            let args = render_args(&p, &gpu_profile(codec), Path::new("/tmp/o.mp4"), None).unwrap();
+            let joined = args.join(" ");
+            assert!(
+                joined.contains("-pix_fmt yuv420p"),
+                "{codec} takes planes in memory: {joined}"
+            );
+            assert!(
+                !joined.contains("hwupload"),
+                "{codec} needs no upload: {joined}"
+            );
+            assert!(
+                !joined.contains("-init_hw_device"),
+                "{codec} needs no device: {joined}"
+            );
+        }
+    }
+
+    #[test]
+    fn nvenc_is_given_its_own_preset_vocabulary() {
+        let s = temp_source("hwpre");
+        let p = Project {
+            tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)])],
+            ..Default::default()
+        };
+        let mut prof = gpu_profile("h264_nvenc");
+        prof.preset = "slow".into();
+        let joined = render_args(&p, &prof, Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        assert!(
+            joined.contains("-preset p5"),
+            "x264 names do not reach NVENC: {joined}"
+        );
+        assert!(
+            joined.contains("-rc vbr"),
+            "the bitrate needs a rate control mode"
+        );
+    }
+
+    #[test]
+    fn vaapi_is_given_no_preset_because_it_rejects_one() {
+        let s = temp_source("hwva");
+        let p = Project {
+            tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)])],
+            ..Default::default()
+        };
+        let joined = render_args(
+            &p,
+            &gpu_profile("h264_vaapi"),
+            Path::new("/tmp/o.mp4"),
+            None,
+        )
+        .unwrap()
+        .join(" ");
+        assert!(
+            !joined.contains("-preset"),
+            "VA-API has no preset: {joined}"
+        );
+    }
+
+    #[test]
+    fn hardware_decode_is_asked_for_once_per_decoded_file() {
+        let s = temp_source("hwdec");
+        // Two media clips and one generated one: lavfi has no decoder to
+        // accelerate, and -hwaccel on it is at best ignored.
+        let mut generated = media_clip("3", &s, 6.0, 0.0, 2.0);
+        generated.source = Source::Color {
+            color: "#204060".into(),
+        };
+        let p = Project {
+            tracks: vec![video_track(vec![
+                media_clip("1", &s, 0.0, 0.0, 2.0),
+                media_clip("2", &s, 3.0, 0.0, 2.0),
+                generated,
+            ])],
+            ..Default::default()
+        };
+
+        let mut prof = profile();
+        prof.hw_decode = true;
+        let args = render_args(&p, &prof, Path::new("/tmp/o.mp4"), None).unwrap();
+        assert_eq!(
+            args.iter().filter(|a| *a == "-hwaccel").count(),
+            2,
+            "one per decoded file, and none for the generated clip"
+        );
+        // A per-input option only applies to the input it precedes.
+        for (i, a) in args.iter().enumerate() {
+            if a == "-hwaccel" {
+                assert_eq!(args[i + 1], "auto");
+                assert_eq!(
+                    args[i + 2],
+                    "-i",
+                    "-hwaccel must sit immediately before its input"
+                );
+            }
+        }
+
+        prof.hw_decode = false;
+        let off = render_args(&p, &prof, Path::new("/tmp/o.mp4"), None).unwrap();
+        assert!(!off.iter().any(|a| a == "-hwaccel"), "off means off");
+    }
+
+    #[test]
+    fn a_software_profile_is_untouched_by_any_of_this() {
+        let s = temp_source("hwnone");
+        let p = Project {
+            tracks: vec![video_track(vec![media_clip("1", &s, 0.0, 0.0, 2.0)])],
+            ..Default::default()
+        };
+        let joined = render_args(&p, &profile(), Path::new("/tmp/o.mp4"), None)
+            .unwrap()
+            .join(" ");
+        for flag in [
+            "-hwaccel",
+            "-init_hw_device",
+            "-filter_hw_device",
+            "hwupload",
+        ] {
+            assert!(
+                !joined.contains(flag),
+                "{flag} has no business here: {joined}"
+            );
+        }
+        assert!(joined.contains("-pix_fmt yuv420p"));
+    }
+
+    #[test]
+    fn hardware_profiles_decode_on_the_gpu_too() {
+        for p in hardware_profiles() {
+            assert!(
+                p.hw_decode,
+                "{} chose the GPU; it should use it to decode",
+                p.id
+            );
         }
     }
 
@@ -11359,6 +11598,60 @@ mod e2e {
             use std::io::Read;
             assert!(f.read(&mut buf).unwrap() == 1, "{id} wrote an empty file");
             let _ = writeln!(std::io::stderr(), "  {id}: ok");
+        }
+    }
+
+    /// Every GPU profile this machine offers has to produce a real file.
+    ///
+    /// `hardware_profiles` already promises the encoder initialises, which is
+    /// a smaller claim than the compositing graph reaching it intact: the
+    /// upload, the device binding and the absent pixel format all have to be
+    /// right together. A machine with no usable GPU encoder skips, the way the
+    /// rest of the suite skips without ffmpeg.
+    #[test]
+    fn every_hardware_profile_renders() {
+        if !ffmpeg_available() {
+            return;
+        }
+        // The lock comes first: listing the profiles probes every candidate
+        // encoder, and a dozen ffmpeg processes starting at once will starve
+        // whichever render test is already running.
+        let _guard = super::tests::render_lock();
+        let profiles = hardware_profiles();
+        if profiles.is_empty() {
+            let _ = writeln!(std::io::stderr(), "  no usable GPU encoder — skipping");
+            return;
+        }
+        let a = make_media("hwprofiles", 1.0);
+        let project = Project {
+            // Two tracks, so the export is a composite rather than a
+            // pass-through: a graph that only ever had one layer would not
+            // exercise the overlay feeding the upload.
+            tracks: vec![
+                track("V1", vec![clip("c", &a, 0.0, 0.0, 1.0)]),
+                track("V2", vec![clip("d", &a, 0.3, 0.0, 0.5)]),
+            ],
+            width: 320,
+            height: 240,
+            fps: 30,
+            ..Default::default()
+        };
+        for profile in profiles {
+            let out = scratch(&format!("odyssey-e2e-{}.mp4", profile.id));
+            let rendered = render(&project, &profile, &out)
+                .unwrap_or_else(|e| panic!("hardware profile {} failed:\n{e}", profile.id));
+            let streams = probe_streams(Path::new(&rendered));
+            assert!(
+                streams.contains("video"),
+                "{} produced no video stream",
+                profile.id
+            );
+            assert!(
+                probe_duration(Path::new(&rendered)) > 0.5,
+                "{} wrote a file with no picture in it",
+                profile.id
+            );
+            let _ = writeln!(std::io::stderr(), "  {}: ok", profile.id);
         }
     }
 }

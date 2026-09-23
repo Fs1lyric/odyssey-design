@@ -1,6 +1,7 @@
 //! Odyssey Design — Tauri command surface.
 
 mod db;
+mod hw;
 mod sheet;
 #[cfg(test)]
 mod stress;

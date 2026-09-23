@@ -124,6 +124,17 @@ drawn after compositing so they sit above every track.
 422, and audio-only MP3. "Show ffmpeg command" prints the exact invocation, so a
 render is inspectable rather than a black box.
 
+**GPU export.** Where the machine has a usable hardware encoder, H.264, H.265
+and AV1 profiles for it are added to the list — NVENC, Quick Sync, VA-API,
+VideoToolbox and AMF. "Usable" is established by running each candidate, not by
+asking ffmpeg what it was compiled with: a stock ffmpeg advertises NVENC on a
+machine with no NVIDIA card, and offering that profile turns a long export into
+a failed one. Sources are decoded on the GPU too, chosen per file so a timeline
+mixing camera H.264 with a VP9 screen recording accelerates what it can and
+decodes the rest normally. Hardware encoders buy speed rather than efficiency,
+which the export dialog says; a master is still better off on a software
+profile.
+
 ### How it compares to Kdenlive
 
 Covered: playback and scrubbing with a preview monitor, multi-track video and

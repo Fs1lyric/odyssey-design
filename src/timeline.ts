@@ -550,6 +550,8 @@ export interface RenderProfile {
   /** Integrated loudness target in LUFS. */
   loudnorm: number | null;
   timecode: boolean;
+  /** Decode sources on the GPU, falling back per file where it cannot. */
+  hw_decode: boolean;
 }
 
 // ---------------------------------------------------------------- helpers
