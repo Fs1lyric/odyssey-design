@@ -1,7 +1,7 @@
 /** Drives the real `Preview` compositor through transitions, an adjustment
  *  layer and an effect the live path cannot show, and checks pixels. */
 import { Preview } from "../../src/preview";
-import { emptyProject, makeClip, newTrack, type Project } from "../../src/timeline";
+import { defaultTitleStyle, emptyProject, makeClip, newTitleRect, newTrack, type Project } from "../../src/timeline";
 
 const out = document.getElementById("out")!;
 const lines: string[] = [];
@@ -65,5 +65,26 @@ p.play();
 await new Promise((r) => setTimeout(r, 200));
 check("playing returns to the live composite", modes.at(-1)?.startsWith("live") ?? false, modes.at(-1) ?? "");
 p.pause();
+
+// Title layers, on the same geometry as title_layers_draw_and_grow_in in
+// timeline.rs: a transparent card whose red box grows over one second.
+{
+  const tp: Project = { ...emptyProject(), width: 160, height: 120, fps: 10 };
+  tp.tracks[0].clips = [makeClip({ type: "color", color: "#336699" }, 0, 2)];
+  const v2 = newTrack("V2", "video");
+  v2.clips = [makeClip({ type: "title", text: "", background: "black", size: 18, color: "white",
+    style: { ...defaultTitleStyle(), opaque: false,
+      layers: [{ ...newTitleRect(), x: 0, y: 0, w: 50, h: 50, color: "#ff0000", reveal: 1 } as never] } }, 0, 2)];
+  tp.tracks.push(v2);
+  const tv = new Preview(tp);
+  tv.seek(0.2);
+  const early = [px(tv, 5, 30), px(tv, 70, 30)];
+  tv.seek(1.5);
+  const late = [px(tv, 70, 30), px(tv, 150, 30)];
+  check("a title shape grows in from its left edge", near(early[0], [255, 0, 0]) && !near(early[1], [255, 0, 0]),
+    JSON.stringify(early));
+  check("grown, it covers its box and the track beneath shows around it",
+    near(late[0], [255, 0, 0]) && near(late[1], [0x33, 0x66, 0x99]), JSON.stringify(late));
+}
 
 out.textContent = "SMOKE\n" + lines.join("\n");

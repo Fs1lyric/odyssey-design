@@ -1021,6 +1021,29 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
 }
 .vid__fxadd { width: auto; flex: 1; font-size: var(--t-xs); padding: 5px var(--s2); }
 
+/* One extra layer of a title card: same surface as an effect in the stack. */
+.vid__titlelayer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s2);
+  padding: var(--s3);
+  background: var(--surface-2);
+  border-radius: var(--r);
+}
+.vid__titlelayer .vid__fxhead { padding-top: 0; border-top: 0; }
+.vid__titlelayer h5 {
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--ink);
+}
+
 .vid__fx {
   display: flex;
   flex-direction: column;
@@ -1613,6 +1636,25 @@ table.grid thead th:first-child { left: 0; z-index: 3; }
 
 .vid__pan { grid-area: pan; width: 84px; accent-color: var(--accent); }
 .vid__strip--master { background: var(--accent-weak); }
+.vid__strip--bus { box-shadow: inset 0 3px 0 var(--accent); }
+/* Routing sits under the strip's buttons, full width, only once a bus exists. */
+.vid__route,
+.vid__sendsbtn {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 104px;
+  font-size: var(--t-xs);
+}
+.vid__busname {
+  width: 88px;
+  padding: 2px var(--s1);
+  text-align: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+}
+.vid__busname:hover,
+.vid__busname:focus { border-color: var(--line); }
 .vid__clipled {
   position: absolute;
   inset: 0 0 auto 0;

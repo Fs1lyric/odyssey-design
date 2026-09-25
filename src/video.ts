@@ -13,16 +13,16 @@ import {
   findClip, isAnimated, newTrack, paramAt, projectDuration, removeKeyframe,
   resolveCollision, setKeyframe, sourceDuration, sourceTimeAt, splitClip, makeFrei0r,
   defaultMotion, BLEND_LABELS, MOTION_PARAMS, TRANSITION_LABELS, EASING_LABELS, FADE_CURVES,
-  defaultTitleStyle, makeClip, migrateProject, multicamSpan, switchAngle,
+  defaultTitleStyle, makeClip, migrateProject, multicamSpan, switchAngle, newTitleRect, newTitleText, type TitleLayer,
   type BlendMode, type TransitionKind, type Clip, type Effect, type Param,
   type BinItem, type Frei0rPlugin, type PreviewChunk, type Project, type RenderJob,
-  type RenderProfile, type Track, type Marker, type TitleStyle, type Interpolation,
+  type RenderProfile, type Track, type Marker, type TitleStyle, type Interpolation, type MulticamGroup, type Bus, newBus,
   type FadeCurve,
 } from "./timeline";
 import {
   audioLag, breakApart, closeGaps, editTracks, expandSelection, extract, fillScale, insertClip,
-  joinThroughEdits, lift, nestClips, overwriteClip, rippleTrimNext, rippleTrimPrevious,
-  setClipSpeed, speedForDuration, staticSpeed, throughEdits,
+  joinThroughEdits, lift, nestClips, overwriteClip, placeImported, rippleTrimNext, rippleTrimPrevious,
+  setClipSpeed, setMulticamAudio, speedForDuration, staticSpeed, throughEdits,
 } from "./edits";
 
 const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "gif"];
@@ -404,6 +404,7 @@ export function mountVideo(
       background: d.background ?? "black",
       master_volume: d.master_volume ?? 1,
       multicam: Array.isArray(d.multicam) ? d.multicam : [],
+      buses: Array.isArray(d.buses) ? d.buses : [],
     });
   }
 
@@ -959,6 +960,56 @@ export function mountVideo(
     } catch (e) {
       say(`Could not write that file. ${String(e)}`, true);
     }
+  }
+
+  /** Read an EDL or OTIO file onto the timeline. Media is looked for in the
+   *  bin and beside the file; what cannot be found comes in offline, and Link
+   *  Media finds it the same way it finds any moved file. */
+  async function importInterchange() {
+    if (!isTauri()) { say("Reading a file needs the desktop app.", true); return; }
+    const picked = await open({
+      multiple: false,
+      filters: [{ name: "Edit lists", extensions: ["edl", "otio", "json"] }],
+    });
+    if (!picked || Array.isArray(picked)) return;
+    let imported;
+    try {
+      imported = await api.importInterchange(picked, project.fps, project.bin.map((b) => b.path));
+    } catch (e) {
+      say(`Could not read ${basename(picked)}. ${String(e)}`, true);
+      return;
+    }
+    if (!imported.clips.length) { say(`${basename(picked)} holds no clips Odyssey can place.`, true); return; }
+
+    // Found files join the bin, as any imported media does.
+    const found = [...new Set(imported.clips.flatMap((c) => c.path ? [c.path] : []))]
+      .filter((path) => !project.bin.some((b) => b.path === path));
+    const infos: MediaInfo[] = [];
+    for (const path of found) {
+      try { infos.push(await api.probeMedia(path)); } catch { /* placed anyway; the bin just lacks it */ }
+    }
+    let tracks: Track[] = [];
+    edit(() => {
+      for (const info of infos) {
+        project.bin.push({
+          id: crypto.randomUUID(), path: info.path, name: basename(info.path),
+          duration: isImage(info.path) ? 0 : info.duration, width: info.width, height: info.height,
+          fps: info.fps, has_audio: info.has_audio, proxy: null, folder: binFolder, label: "",
+        });
+      }
+      tracks = placeImported(project, imported, isImage);
+    }, "Import edit list");
+    void loadThumbs();
+    void loadWaveforms();
+    await refreshOffline();
+
+    const n = imported.clips.length;
+    const parts = [`Imported ${n} clip${n === 1 ? "" : "s"} onto ${tracks.map((t) => t.name).join(", ")}.`];
+    if (imported.missing.length) {
+      parts.push(`${imported.missing.length} file${imported.missing.length === 1 ? " is" : "s are"} offline; use Link media to find ${imported.missing.length === 1 ? "it" : "them"}.`);
+    }
+    parts.push(...imported.warnings);
+    say(parts.join(" "), imported.missing.length > 0);
   }
 
   /** Detect cuts in the selected clip and drop a marker on each. */
@@ -2650,6 +2701,49 @@ export function mountVideo(
         style: { ...defaultTitleStyle(), opaque: false, scroll: "crawl", valign: "bottom", box_enabled: true, box_color: "#8C1D18@0.9", box_padding: 14 },
       },
     })],
+    ["name-role", "Name and role", (text) => ({
+      seconds: 5,
+      source: {
+        type: "title", text: "", background: "black", size: 54, color: "white",
+        style: {
+          ...defaultTitleStyle(), opaque: false,
+          layers: [
+            { ...newTitleRect(), x: 6, y: 70, w: 0.8, h: 15, color: "#E07B24", reveal: 0.25 } as TitleLayer,
+            { ...newTitleRect(), x: 7.2, y: 70, w: 36, h: 15, color: "#101820@0.8", appear: 0.15, reveal: 0.4 } as TitleLayer,
+            { ...newTitleText(text), x: 9, y: 74.5, align: "left", size: 46, appear: 0.35, reveal: 0.3 } as TitleLayer,
+            { ...newTitleText("Role or place"), x: 9, y: 81, align: "left", size: 28, color: "#C8CDD4", appear: 0.55, reveal: 0.3 } as TitleLayer,
+          ],
+        },
+      },
+    })],
+    ["chapter", "Chapter card", (text) => ({
+      seconds: 4,
+      source: {
+        type: "title", text: "", background: "#0E1116", size: 54, color: "white",
+        style: {
+          ...defaultTitleStyle(),
+          layers: [
+            { ...newTitleText("CHAPTER ONE"), y: 40, size: 30, color: "#9AA4B2", reveal: 0.4 } as TitleLayer,
+            { ...newTitleRect(), x: 44, y: 46, w: 12, h: 0.4, color: "#E07B24", appear: 0.2, reveal: 0.4 } as TitleLayer,
+            { ...newTitleText(text), y: 56, size: 96, appear: 0.4, reveal: 0.5 } as TitleLayer,
+          ],
+        },
+      },
+    })],
+    ["quote", "Pull quote", (text) => ({
+      seconds: 6,
+      source: {
+        type: "title", text: "", background: "#F4F1EA", size: 54, color: "white",
+        style: {
+          ...defaultTitleStyle(),
+          layers: [
+            { ...newTitleText("\u201C"), x: 14, y: 30, align: "left", size: 220, color: "#C9BFAE" } as TitleLayer,
+            { ...newTitleText(text), x: 50, y: 50, size: 64, color: "#1C1B19", reveal: 0.6 } as TitleLayer,
+            { ...newTitleText("\u2014 Speaker"), x: 86, y: 68, align: "right", size: 34, color: "#6B665C", appear: 0.8, reveal: 0.4 } as TitleLayer,
+          ],
+        },
+      },
+    })],
     ["caption", "Outlined caption", (text) => ({
       seconds: 4,
       source: {
@@ -3451,6 +3545,7 @@ export function mountVideo(
     iconBtn("camera", "Export the frame at the playhead (Ctrl+Shift+E)", () => void exportFrame()),
     iconBtn("file-arrow-down", "Export an EDL", () => void exportInterchange("edl")),
     iconBtn("tree-structure", "Export OpenTimelineIO", () => void exportInterchange("otio")),
+    iconBtn("file-arrow-up", "Import an EDL or OpenTimelineIO file", () => void importInterchange()),
     iconBtn("scan", "Detect cuts in the selected clip", () => void detectScenes()),
     iconBtn("frame-corners", "Nest this track into one clip", nestSelectedTrack),
     iconBtn("arrows-out", "Zoom to fit (F)", zoomToFit),
@@ -4895,6 +4990,14 @@ export function mountVideo(
           if (!switchAngle(trial, cam, Number(v))) { say("That camera was not rolling for all of this clip.", true); renderInspector(); return; }
           edit(() => { switchAngle(clip, cam, Number(v)); }, "Switch angle");
         }));
+      quick.appendChild(selectField("Audio", cam.audio == null ? "follow" : String(cam.audio),
+        [["follow", "Follows the cut"], ...cam.angles.map((a, i) => [String(i), `Always ${i + 1} · ${a.name}`] as [string, string])],
+        (v) => chooseMulticamAudio(cam, v === "follow" ? null : Number(v))));
+      if (cam.audio != null) {
+        const again = btn("Relay audio", () => chooseMulticamAudio(cam, cam.audio ?? null));
+        again.title = "Lay the fixed angle's sound again, after moving or trimming the cuts";
+        quick.appendChild(again);
+      }
     }
     if (clip.group) quick.appendChild(btn("Ungroup", () => groupSelection(false)));
     if (clip.link && selection.size <= 2) quick.appendChild(btn("Unlink", toggleLink));
@@ -4936,6 +5039,7 @@ export function mountVideo(
         textField("Card colour", src.background, (v) => edit(() => { src.background = v; })),
         selectField("Roll and crawl", st.scroll, [["none", "Still"], ["roll", "Roll (credits, bottom to top)"], ["crawl", "Crawl (right to left)"]],
           (v) => set("scroll", v)),
+        titleLayersPanel(st),
       );
     }
     if (clip.source.type === "color") {
@@ -5584,6 +5688,99 @@ export function mountVideo(
     return row;
   }
 
+  // ---------------------------------------------------------- title layers
+
+  /** The extra text and shapes of a title card, each with its own place,
+   *  styling and timing, listed in drawing order (later draws on top). */
+  function titleLayersPanel(st: TitleStyle): HTMLElement {
+    const wrap = document.createElement("div");
+    const head = document.createElement("div");
+    head.className = "vid__fxhead";
+    const h = document.createElement("h4");
+    h.textContent = "Layers";
+    const change = (fn: () => void, label = "Title layer") => { edit(fn, label); renderInspector(); };
+    head.append(
+      h,
+      btn("Add text", () => change(() => { st.layers.push(newTitleText()); }, "Add title text")),
+      btn("Add shape", () => change(() => { st.layers.push(newTitleRect()); }, "Add title shape")),
+    );
+    wrap.appendChild(head);
+    if (!st.layers.length) {
+      const hint = document.createElement("p");
+      hint.className = "vid__binmeta";
+      hint.textContent = "Add text or a shape to build a card from several items. Positions are percentages of the frame.";
+      wrap.appendChild(hint);
+    }
+
+    st.layers.forEach((layer, i) => {
+      const card = document.createElement("div");
+      card.className = "vid__titlelayer";
+      const bar = document.createElement("div");
+      bar.className = "vid__fxhead";
+      const name = document.createElement("h5");
+      name.textContent = layer.type === "text" ? `Text ${i + 1}: ${layer.text.split("\n")[0].slice(0, 24) || "(empty)"}` : `Shape ${i + 1}`;
+      const move = (to: number) => change(() => {
+        const [it] = st.layers.splice(i, 1);
+        st.layers.splice(to, 0, it);
+      }, "Reorder title layers");
+      const up = iconBtn("arrow-up", "Draw earlier (further back)", () => move(i - 1));
+      const down = iconBtn("arrow-down", "Draw later (further forward)", () => move(i + 1));
+      up.disabled = i === 0;
+      down.disabled = i === st.layers.length - 1;
+      bar.append(
+        name, up, down,
+        iconBtn("copy", "Duplicate", () => change(() => { st.layers.splice(i + 1, 0, structuredClone(layer)); }, "Duplicate title layer")),
+        iconBtn("trash", "Remove", () => change(() => { st.layers.splice(i, 1); }, "Remove title layer")),
+      );
+      card.appendChild(bar);
+
+      const set = (fn: () => void) => edit(fn, "Title layer");
+      const fields = document.createElement("div");
+      fields.className = "vid__fields";
+      if (layer.type === "text") {
+        const text = document.createElement("textarea");
+        text.className = "vid__subtext";
+        text.rows = 2;
+        text.value = layer.text;
+        text.setAttribute("aria-label", `Text of layer ${i + 1}`);
+        text.addEventListener("change", () => set(() => { layer.text = text.value; }));
+        card.appendChild(text);
+        fields.append(
+          numField("Size", layer.size, 4, 1000, 1, (v) => set(() => { layer.size = v; })),
+          textField("Colour", layer.color, (v) => set(() => { layer.color = v; })),
+          numField("X %", layer.x, -100, 200, 0.5, (v) => set(() => { layer.x = v; })),
+          numField("Y %", layer.y, -100, 200, 0.5, (v) => set(() => { layer.y = v; })),
+          selectField("Anchor", layer.align, [["left", "Left edge"], ["center", "Centre"], ["right", "Right edge"]],
+            (v) => set(() => { layer.align = v; })),
+          numField("Stroke width", layer.stroke_width, 0, 64, 1, (v) => set(() => { layer.stroke_width = v; })),
+          textField("Stroke colour", layer.stroke_color, (v) => set(() => { layer.stroke_color = v; })),
+          numField("Shadow distance", layer.shadow, 0, 64, 1, (v) => set(() => { layer.shadow = v; })),
+          textField("Shadow colour", layer.shadow_color, (v) => set(() => { layer.shadow_color = v; })),
+          textField("Box colour (@ sets alpha)", layer.box_color, (v) => set(() => { layer.box_color = v; })),
+          numField("Box padding", layer.box_padding, 0, 200, 1, (v) => set(() => { layer.box_padding = v; })),
+          numField("Appears at (s)", layer.appear, 0, 3600, 0.1, (v) => set(() => { layer.appear = Math.max(0, v); })),
+          numField("Fades in over (s)", layer.reveal, 0, 60, 0.1, (v) => set(() => { layer.reveal = Math.max(0, v); })),
+        );
+        card.append(fields, checkField("Box behind this text", layer.box_enabled, (v) => set(() => { layer.box_enabled = v; })));
+      } else {
+        fields.append(
+          numField("X %", layer.x, -100, 200, 0.5, (v) => set(() => { layer.x = v; })),
+          numField("Y %", layer.y, -100, 200, 0.5, (v) => set(() => { layer.y = v; })),
+          numField("Width %", layer.w, 0, 300, 0.5, (v) => set(() => { layer.w = Math.max(0, v); })),
+          numField("Height %", layer.h, 0, 300, 0.5, (v) => set(() => { layer.h = Math.max(0, v); })),
+          textField("Colour (@ sets alpha)", layer.color, (v) => set(() => { layer.color = v; })),
+          numField("Outline", layer.outline, 0, 200, 1, (v) => set(() => { layer.outline = Math.max(0, v); })),
+          textField("Outline colour", layer.outline_color, (v) => set(() => { layer.outline_color = v; })),
+          numField("Appears at (s)", layer.appear, 0, 3600, 0.1, (v) => set(() => { layer.appear = Math.max(0, v); })),
+          numField("Grows in over (s)", layer.reveal, 0, 60, 0.1, (v) => set(() => { layer.reveal = Math.max(0, v); })),
+        );
+        card.appendChild(fields);
+      }
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
   // ------------------------------------------------------------ field makers
 
   function numField(label: string, value: number, min: number, max: number, step: number, onSet: (v: number) => void) {
@@ -5689,6 +5886,21 @@ export function mountVideo(
     } catch (e) {
       say(`Could not sync: ${e}`, true);
     }
+  }
+
+  /** Where a group's sound comes from: each cut's own camera, or one angle
+   *  under every cut. */
+  function chooseMulticamAudio(group: MulticamGroup, angle: number | null) {
+    const name = `${group.name} audio`;
+    if (project.tracks.some((t) => t.kind === "audio" && t.name === name && t.locked)) {
+      say(`${name} is locked.`, true);
+      return;
+    }
+    let laid: Clip[] = [];
+    edit(() => { laid = setMulticamAudio(project, group, angle); }, "Multicam audio");
+    if (angle === null) say(`${group.name}: each cut plays its own camera's sound.`);
+    else if (!laid.length) say(`${group.angles[angle].name} was not rolling under any of the cuts.`, true);
+    else say(`${group.name}: ${group.angles[angle].name}'s sound runs under every cut, on ${name}.`);
   }
 
   function toggleMulticamView() {
@@ -5852,7 +6064,13 @@ export function mountVideo(
     const note = document.createElement("span");
     note.className = "vid__mixernote";
     note.textContent = anySolo ? "Solo active. Other tracks are silent." : "";
-    head.append(h, note);
+    const addBus = iconBtn("plus", "Add bus", () => {
+      edit(() => { project.buses.push(newBus(`Bus ${project.buses.length + 1}`)); }, "Add bus");
+      preview.refreshMix();
+      renderMixer();
+    }, "btn btn--quiet", true);
+    addBus.title = "A submix that tracks can be routed or sent to";
+    head.append(h, note, addBus);
     mixer.appendChild(head);
 
     const strips = document.createElement("div");
@@ -5948,8 +6166,11 @@ export function mountVideo(
       pan.addEventListener("dblclick", () => { edit(() => { track.pan = 0; }, "Centre pan"); preview.refreshMix(); });
 
       strip.append(name, meter, slider, readout, pan, buttons);
+      if (project.buses.length) strip.append(...routingControls(track));
       strips.appendChild(strip);
     }
+
+    for (const bus of project.buses) strips.appendChild(busStrip(bus));
 
     // The master bus: every track feeds it, and the export applies it last.
     const master = document.createElement("div");
@@ -5993,6 +6214,188 @@ export function mountVideo(
     strips.appendChild(loudnessPanel());
 
     mixer.appendChild(strips);
+  }
+
+  /** Where a track's sound goes, and what it sends. */
+  function routingControls(track: Track): HTMLElement[] {
+    const out = document.createElement("select");
+    out.className = "vid__route";
+    out.setAttribute("aria-label", `${track.name} output`);
+    out.title = "Output: the master, or a bus that submixes it";
+    for (const [value, label] of [["", "→ Master"], ...project.buses.map((b) => [b.id, `→ ${b.name}`])]) {
+      const o = document.createElement("option");
+      o.value = value;
+      o.textContent = label;
+      o.selected = (track.output ?? "") === value || (!value && !project.buses.some((b) => b.id === track.output));
+      out.appendChild(o);
+    }
+    out.addEventListener("change", () => {
+      edit(() => { track.output = out.value || null; }, "Track output");
+      preview.refreshMix();
+      renderMixer();
+    });
+    const live = track.sends.filter((x) => x.level > 0 && project.buses.some((b) => b.id === x.bus)).length;
+    const sends = btn(live ? `Sends (${live})` : "Sends", () => sendsDialog(track), "btn btn--quiet vid__sendsbtn");
+    sends.title = "Send a copy of this track, after its fader, to buses";
+    return [out, sends];
+  }
+
+  function sendsDialog(track: Track) {
+    openDialog(`${track.name} sends`, "Each send is a copy of the track after its fader, at its own level. The track still plays through its output.", (body, close) => {
+      const fields = document.createElement("div");
+      fields.className = "vid__fields";
+      for (const bus of project.buses) {
+        const current = track.sends.find((x) => x.bus === bus.id)?.level ?? 0;
+        fields.appendChild(numField(`${bus.name} (0 is off)`, current, 0, 4, 0.05, (v) => {
+          edit(() => {
+            track.sends = track.sends.filter((x) => x.bus !== bus.id);
+            if (v > 0) track.sends.push({ bus: bus.id, level: Math.min(4, v) });
+          }, "Send level");
+          preview.refreshMix();
+          renderMixer();
+        }));
+      }
+      body.appendChild(fields);
+      return [btn("Done", close, "btn btn--primary")];
+    });
+  }
+
+  /** A bus in the mixer: fader, pan, mute, its effects and its removal. */
+  function busStrip(bus: Bus): HTMLElement {
+    const strip = document.createElement("div");
+    strip.className = "vid__strip vid__strip--bus";
+    const name = document.createElement("input");
+    name.className = "vid__stripname vid__busname";
+    name.value = bus.name;
+    name.setAttribute("aria-label", "Bus name");
+    name.addEventListener("change", () => { edit(() => { bus.name = name.value.trim() || bus.name; }, "Rename bus"); renderMixer(); });
+    const meter = document.createElement("div");
+    meter.className = "vid__meter";
+    meter.dataset.track = bus.id;
+    const fill = document.createElement("span");
+    fill.className = "vid__meterfill";
+    meter.appendChild(fill);
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "2";
+    slider.step = "0.01";
+    slider.value = String(bus.volume);
+    slider.className = "vid__vol";
+    slider.setAttribute("aria-label", `${bus.name} volume`);
+    const readout = document.createElement("output");
+    readout.className = "vid__voldb";
+    readout.textContent = dbLabel(bus.volume);
+    let pre: string | null = null;
+    slider.addEventListener("input", () => {
+      pre ??= JSON.stringify(saved);
+      bus.volume = Number(slider.value);
+      readout.textContent = dbLabel(bus.volume);
+      preview.refreshMix();
+    });
+    slider.addEventListener("change", () => {
+      if (pre !== null) { history.push(JSON.parse(pre) as Project, "Bus volume"); pre = null; }
+      commit();
+    });
+
+    const pan = document.createElement("input");
+    pan.type = "range";
+    pan.min = "-1";
+    pan.max = "1";
+    pan.step = "0.05";
+    pan.value = String(bus.pan);
+    pan.className = "vid__pan";
+    pan.setAttribute("aria-label", `${bus.name} pan`);
+    pan.title = `Pan ${panLabel(bus.pan)}. Double-click to centre.`;
+    let prePan: string | null = null;
+    pan.addEventListener("input", () => {
+      prePan ??= JSON.stringify(saved);
+      bus.pan = Number(pan.value);
+      preview.refreshMix();
+    });
+    pan.addEventListener("change", () => {
+      if (prePan !== null) { history.push(JSON.parse(prePan) as Project, "Bus pan"); prePan = null; }
+      commit();
+    });
+    pan.addEventListener("dblclick", () => { edit(() => { bus.pan = 0; }, "Centre pan"); preview.refreshMix(); });
+
+    const buttons = document.createElement("div");
+    buttons.className = "vid__stripbtns";
+    const mute = toggle(bus.muted ? "speaker-slash" : "speaker-high", bus.muted ? "Unmute bus" : "Mute bus", bus.muted, () => {
+      edit(() => { bus.muted = !bus.muted; }, "Mute bus");
+      preview.refreshMix();
+      renderMixer();
+    });
+    const fx = iconBtn("magic-wand", `Effects on ${bus.name}${bus.effects.length ? ` (${bus.effects.length})` : ""}`, () => busEffectsDialog(bus));
+    const remove = iconBtn("trash", `Remove ${bus.name}`, () => {
+      edit(() => {
+        project.buses = project.buses.filter((b) => b.id !== bus.id);
+        // Tracks that fed it go back to the master; sends to it stop.
+        for (const t of project.tracks) {
+          if (t.output === bus.id) t.output = null;
+          t.sends = t.sends.filter((x) => x.bus !== bus.id);
+        }
+      }, "Remove bus");
+      preview.refreshMix();
+      renderMixer();
+    });
+    buttons.append(mute, fx, remove);
+    strip.append(name, meter, slider, readout, pan, buttons);
+    return strip;
+  }
+
+  /** A bus's effect stack: audio effects only, with their static values. */
+  function busEffectsDialog(bus: Bus) {
+    openDialog(`${bus.name} effects`, "Applied to the bus in the export, in order. Like clip audio effects, the live monitor plays without them.", (body, close) => {
+      const draw = () => {
+        body.replaceChildren();
+        bus.effects.forEach((effect, i) => {
+          const card = document.createElement("div");
+          card.className = "vid__titlelayer";
+          const bar = document.createElement("div");
+          bar.className = "vid__fxhead";
+          const h = document.createElement("h5");
+          h.textContent = EFFECT_CATALOGUE.find((e) => e.make().kind === effect.kind)?.label ?? effect.kind;
+          bar.append(h, iconBtn("trash", "Remove", () => {
+            edit(() => { bus.effects.splice(i, 1); }, "Remove bus effect");
+            draw();
+          }));
+          card.appendChild(bar);
+          const fields = document.createElement("div");
+          fields.className = "vid__fields";
+          const bag = effect as unknown as Record<string, Param>;
+          for (const spec of EFFECT_PARAMS[effect.kind] ?? []) {
+            fields.appendChild(numField(spec.label, paramAt(bag[spec.key] ?? 0, 0), spec.min, spec.max, spec.step,
+              (v) => edit(() => { bag[spec.key] = v; }, "Bus effect")));
+          }
+          card.appendChild(fields);
+          body.appendChild(card);
+        });
+        const add = document.createElement("select");
+        add.setAttribute("aria-label", "Add an audio effect");
+        const first = document.createElement("option");
+        first.value = "";
+        first.textContent = "Add an audio effect…";
+        add.appendChild(first);
+        EFFECT_CATALOGUE.forEach((e, i) => {
+          if (e.group !== "Audio") return;
+          const o = document.createElement("option");
+          o.value = String(i);
+          o.textContent = e.label;
+          add.appendChild(o);
+        });
+        add.addEventListener("change", () => {
+          const entry = EFFECT_CATALOGUE[Number(add.value)];
+          if (!entry) return;
+          edit(() => { bus.effects.push(entry.make()); }, "Add bus effect");
+          draw();
+        });
+        body.appendChild(add);
+      };
+      draw();
+      return [btn("Done", () => { close(); renderMixer(); }, "btn btn--primary")];
+    });
   }
 
   /** EBU R128 readouts: live from the monitor's master bus, and, on request,

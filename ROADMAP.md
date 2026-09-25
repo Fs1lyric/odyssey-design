@@ -7,16 +7,14 @@ usable without any of it; this is the honest gap list, not a wishlist.
 
 - **Source monitor.** Set in and out points on a bin clip before placing it.
   The three-point editing workflow depends on this.
-- **EDL and OTIO import.** Export works both ways round; import does not.
-- **Multicam audio choice.** Audio follows the cut angle; Premiere also lets
-  one angle's audio run under every cut.
+- **Title templates.** Title cards take layered text and shapes with outlines,
+  shadows, alignment and timed reveals, but every card starts empty; there is
+  no way to save a card's layout and reuse it.
 
 ## Larger
 
-- **A real title editor.** Currently one centred string per title card.
-  Multiple text and shape items, outlines, shadows, alignment and templates.
-- **Multi-channel audio routing.** Channel picking exists per clip; buses,
-  sends and submixes do not.
+- **Nested buses.** Tracks route and send to buses, and every bus feeds the
+  master. A bus cannot feed another bus.
 
 ## Known limitations
 

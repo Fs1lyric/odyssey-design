@@ -2,6 +2,7 @@
 
 mod db;
 mod hw;
+mod interchange;
 mod sheet;
 #[cfg(test)]
 mod stress;
@@ -266,6 +267,31 @@ fn export_otio(project: timeline::Project, name: String) -> String {
     timeline::to_otio(&project, &name)
 }
 
+/// Read an EDL or OTIO file into placed clips, finding each clip's media among
+/// `known` (the bin) or beside the file. JSON content is taken as OTIO
+/// whatever the extension, since both are plain text.
+#[tauri::command]
+fn import_interchange(
+    path: String,
+    fps: f64,
+    known: Vec<String>,
+) -> Result<interchange::Imported, timeline::Error> {
+    let text = std::fs::read_to_string(&path)?;
+    let parsed = if text.trim_start().starts_with('{') {
+        interchange::parse_otio(&text).map_err(timeline::Error::Invalid)?
+    } else {
+        interchange::parse_edl(&text, fps)
+    };
+    let dir = std::path::Path::new(&path).parent();
+    Ok(interchange::resolve(
+        parsed,
+        &known,
+        dir,
+        fps,
+        interchange::start_timecode,
+    ))
+}
+
 fn autosave_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, timeline::Error> {
     Ok(app
         .path()
@@ -513,6 +539,7 @@ pub fn run() {
             flatten_nested,
             export_edl,
             export_otio,
+            import_interchange,
             autosave,
             autosaves,
             restore_autosave,

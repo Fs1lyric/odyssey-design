@@ -2404,6 +2404,145 @@ fn title_drawtext(text: &str, size: f64, color: &str, style: &TitleStyle, dur: f
     f
 }
 
+/// Most slices a shape's grow-in is cut into. drawbox fixes its size when the
+/// graph is built, so growth is one gated box per frame, up to this many.
+const MAX_REVEAL_SLICES: usize = 48;
+
+/// The filters for a title card's extra layers, in drawing order. On a
+/// transparent card shapes replace the pixels they cover, alpha included, or
+/// they would paint colour into a picture that stays invisible.
+fn title_layer_filters(
+    layers: &[TitleLayer],
+    w: u32,
+    h: u32,
+    fps: u32,
+    opaque: bool,
+) -> Vec<String> {
+    let (fw, fh) = (w as f64, h as f64);
+    let mut out = Vec::new();
+    for layer in layers {
+        match layer {
+            TitleLayer::Text {
+                text,
+                size,
+                color,
+                x,
+                y,
+                align,
+                stroke_width,
+                stroke_color,
+                shadow,
+                shadow_color,
+                box_enabled,
+                box_color,
+                box_padding,
+                appear,
+                reveal,
+            } => {
+                let px = x.clamp(-100.0, 200.0);
+                let py = y.clamp(-100.0, 200.0);
+                let xe = match align.as_str() {
+                    "left" => format!("w*{px:.4}/100"),
+                    "right" => format!("w*{px:.4}/100-text_w"),
+                    _ => format!("w*{px:.4}/100-text_w/2"),
+                };
+                let mut f = format!(
+                    "drawtext=text='{}':fontsize={:.0}:fontcolor={}:x='{xe}':y='h*{py:.4}/100-text_h/2'",
+                    escape_drawtext(text),
+                    size.clamp(4.0, 1000.0),
+                    sanitise_color(color)
+                );
+                if *stroke_width > 0.0 {
+                    f.push_str(&format!(
+                        ":borderw={:.0}:bordercolor={}",
+                        stroke_width.clamp(0.0, 64.0),
+                        sanitise_color(stroke_color)
+                    ));
+                }
+                if *shadow > 0.0 {
+                    let o = shadow.clamp(0.0, 64.0);
+                    f.push_str(&format!(
+                        ":shadowx={o:.0}:shadowy={o:.0}:shadowcolor={}",
+                        sanitise_color(shadow_color)
+                    ));
+                }
+                if *box_enabled {
+                    f.push_str(&format!(
+                        ":box=1:boxcolor={}:boxborderw={:.0}",
+                        sanitise_color(box_color),
+                        box_padding.clamp(0.0, 200.0)
+                    ));
+                }
+                let a = appear.max(0.0);
+                if *reveal > 0.0 {
+                    f.push_str(&format!(
+                        ":alpha='if(lt(t,{a:.4}),0,min(1,(t-{a:.4})/{:.4}))'",
+                        reveal.max(0.001)
+                    ));
+                } else if a > 0.0 {
+                    f.push_str(&format!(":enable='gte(t,{a:.4})'"));
+                }
+                out.push(f);
+            }
+            TitleLayer::Rect {
+                x,
+                y,
+                w: rw,
+                h: rh,
+                color,
+                outline,
+                outline_color,
+                appear,
+                reveal,
+            } => {
+                let bx = (fw * x.clamp(-100.0, 200.0) / 100.0).round();
+                let by = (fh * y.clamp(-100.0, 200.0) / 100.0).round();
+                let bw = (fw * rw.clamp(0.0, 300.0) / 100.0).round().max(1.0);
+                let bh = (fh * rh.clamp(0.0, 300.0) / 100.0).round().max(1.0);
+                let replace = if opaque { "" } else { ":replace=1" };
+                let colour = sanitise_color(color);
+                let a = appear.max(0.0);
+                let full_from = a + reveal.max(0.0);
+                let gate = |from: f64, to: Option<f64>| -> String {
+                    match to {
+                        Some(to) => format!(":enable='between(t,{from:.4},{to:.4})'"),
+                        None if from > 0.0 => format!(":enable='gte(t,{from:.4})'"),
+                        None => String::new(),
+                    }
+                };
+                if *reveal > 0.0 {
+                    let n = ((reveal * fps as f64).ceil() as usize).clamp(1, MAX_REVEAL_SLICES);
+                    let step = reveal / n as f64;
+                    for k in 1..=n {
+                        let from = a + step * (k - 1) as f64;
+                        // between() is inclusive at both ends; stop just short
+                        // so two slices never draw the same frame.
+                        let to = from + step - 1e-4;
+                        out.push(format!(
+                            "drawbox=x={bx}:y={by}:w={:.0}:h={bh}:color={colour}:t=fill{replace}{}",
+                            (bw * k as f64 / n as f64).round().max(1.0),
+                            gate(from, Some(to))
+                        ));
+                    }
+                }
+                out.push(format!(
+                    "drawbox=x={bx}:y={by}:w={bw}:h={bh}:color={colour}:t=fill{replace}{}",
+                    gate(full_from, None)
+                ));
+                if *outline > 0.0 {
+                    out.push(format!(
+                        "drawbox=x={bx}:y={by}:w={bw}:h={bh}:color={}:t={:.0}{replace}{}",
+                        sanitise_color(outline_color),
+                        outline.clamp(1.0, 200.0),
+                        gate(full_from, None)
+                    ));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// `afade` curve names are a closed set; the three Premiere offers map to
 /// constant gain, constant power and exponential.
 fn sanitise_curve(c: &str) -> &'static str {
@@ -2562,6 +2701,81 @@ pub struct TitleStyle {
     /// tracks beneath, which is what a lower third needs.
     #[serde(default = "yes")]
     pub opaque: bool,
+    /// Further text and shapes drawn over the card after its main text, in
+    /// order, each placed as a percentage of the frame and timed on its own.
+    #[serde(default)]
+    pub layers: Vec<TitleLayer>,
+}
+
+/// One item of a title card beyond its main text.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum TitleLayer {
+    /// Text anchored at (x, y): its vertical centre, and its left edge,
+    /// centre or right edge as `align` says.
+    Text {
+        text: String,
+        #[serde(default = "d_size")]
+        size: f64,
+        #[serde(default = "d_white")]
+        color: String,
+        #[serde(default = "d_fifty")]
+        x: f64,
+        #[serde(default = "d_fifty")]
+        y: f64,
+        #[serde(default = "d_center")]
+        align: String,
+        #[serde(default)]
+        stroke_width: f64,
+        #[serde(default = "d_black")]
+        stroke_color: String,
+        #[serde(default)]
+        shadow: f64,
+        #[serde(default = "d_shadow_colour")]
+        shadow_color: String,
+        #[serde(default)]
+        box_enabled: bool,
+        #[serde(default = "d_box_colour")]
+        box_color: String,
+        #[serde(default = "d_box_pad")]
+        box_padding: f64,
+        /// Seconds into the clip before it shows.
+        #[serde(default)]
+        appear: f64,
+        /// Seconds it takes to fade in once it shows.
+        #[serde(default)]
+        reveal: f64,
+    },
+    /// A filled rectangle with its top-left corner at (x, y), `w` by `h`, all
+    /// percentages of the frame, and an optional outline.
+    Rect {
+        #[serde(default)]
+        x: f64,
+        #[serde(default)]
+        y: f64,
+        #[serde(default = "d_fifty")]
+        w: f64,
+        #[serde(default = "d_ten")]
+        h: f64,
+        #[serde(default = "d_white")]
+        color: String,
+        #[serde(default)]
+        outline: f64,
+        #[serde(default = "d_white")]
+        outline_color: String,
+        #[serde(default)]
+        appear: f64,
+        /// Seconds it takes to grow in from its left edge once it shows.
+        #[serde(default)]
+        reveal: f64,
+    },
+}
+
+fn d_fifty() -> f64 {
+    50.0
+}
+fn d_ten() -> f64 {
+    10.0
 }
 
 impl Default for TitleStyle {
@@ -2580,6 +2794,7 @@ impl Default for TitleStyle {
             box_padding: d_box_pad(),
             scroll: d_none(),
             opaque: true,
+            layers: Vec::new(),
         }
     }
 }
@@ -3142,6 +3357,40 @@ pub struct Track {
     /// Stereo balance, -1 full left to 1 full right.
     #[serde(default)]
     pub pan: f64,
+    /// The bus this track's sound goes to. None, or a bus that no longer
+    /// exists, means straight to the master.
+    #[serde(default)]
+    pub output: Option<String>,
+    /// Copies of this track's sound sent to buses, after its fader, while
+    /// the track itself still goes to its output.
+    #[serde(default)]
+    pub sends: Vec<Send>,
+}
+
+/// A copy of a track's sound feeding a bus, at its own level.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Send {
+    pub bus: String,
+    #[serde(default = "one_f")]
+    pub level: f64,
+}
+
+/// A submix: the tracks routed or sent to it are summed, run through its
+/// effects, fader and pan, and the result feeds the master.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Bus {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default = "one_f")]
+    pub volume: f64,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub pan: f64,
+    /// Audio effects only; anything else is ignored.
+    #[serde(default)]
+    pub effects: Vec<Effect>,
 }
 
 fn d_duck_threshold() -> f64 {
@@ -3274,6 +3523,9 @@ pub struct Project {
     /// The master bus fader, applied to the final mix.
     #[serde(default = "one_f")]
     pub master_volume: f64,
+    /// Submixes between the tracks and the master.
+    #[serde(default)]
+    pub buses: Vec<Bus>,
 }
 
 fn d_sub_size() -> f64 {
@@ -3312,6 +3564,7 @@ impl Default for Project {
             sample_rate: 48000,
             background: "black".into(),
             master_volume: 1.0,
+            buses: Vec::new(),
         }
     }
 }
@@ -4160,6 +4413,13 @@ pub fn render_args(
             } = &clip.source
             {
                 chain.push(title_drawtext(text, *size, color, style, clip_dur));
+                chain.extend(title_layer_filters(
+                    &style.layers,
+                    project.width,
+                    project.height,
+                    project.fps,
+                    style.opaque,
+                ));
             }
 
             let mut pipe = Pipeline::new();
@@ -4751,6 +5011,8 @@ attack={:.1}:release={:.1}[{out}]",
                 for l in key_parts {
                     consumed.insert(l.clone());
                 }
+                audio_owner.push((out.clone(), track.id.clone()));
+                audio_owner.push((format!("{key_sum}_keep"), key_id.clone()));
                 ducked_labels.push(out);
                 ducked_labels.push(format!("{key_sum}_keep"));
             }
@@ -4761,6 +5023,15 @@ attack={:.1}:release={:.1}[{out}]",
             }
         }
     }
+
+    // ---- buses ----
+    route_buses(
+        project,
+        &mut audio_labels,
+        &audio_owner,
+        &mut filters,
+        total,
+    );
 
     // ---- mix audio ----
     // The master bus: fader, then loudness normalisation. loudnorm upsamples
@@ -4904,6 +5175,114 @@ attack={:.1}:release={:.1}[{out}]",
 
 /// A filter pipeline split into one or more chains.
 ///
+/// Route each track's sound through the buses. Every label in `labels` is a
+/// sound owned by one track (per clip, or per track once ducked). A track with
+/// sends has its sound split, one copy per send at the send's level; its own
+/// copy goes to its output bus or stays for the master. Each bus with inputs
+/// is summed, run through its audio effects, fader and pan, and joins the
+/// master. A muted bus swallows what reaches it. On return `labels` holds
+/// what the master mixes.
+fn route_buses(
+    project: &Project,
+    labels: &mut Vec<String>,
+    owners: &[(String, String)],
+    filters: &mut Vec<String>,
+    total: f64,
+) {
+    if project.buses.is_empty() || labels.is_empty() {
+        return;
+    }
+    let bus_ids: std::collections::BTreeSet<&str> =
+        project.buses.iter().map(|b| b.id.as_str()).collect();
+    let owner = |label: &str| {
+        owners
+            .iter()
+            .rev()
+            .find(|(l, _)| l == label)
+            .and_then(|(_, t)| project.tracks.iter().find(|tr| &tr.id == t))
+    };
+    let mut to_master = Vec::new();
+    let mut inputs: std::collections::BTreeMap<&str, Vec<String>> = Default::default();
+    for (n, label) in labels.iter().enumerate() {
+        let Some(track) = owner(label) else {
+            to_master.push(label.clone());
+            continue;
+        };
+        let sends: Vec<&Send> = track
+            .sends
+            .iter()
+            .filter(|s| bus_ids.contains(s.bus.as_str()) && s.level > 0.0)
+            .collect();
+        let main = if sends.is_empty() {
+            label.clone()
+        } else {
+            let outs: Vec<String> = (0..=sends.len()).map(|k| format!("r{n}_{k}")).collect();
+            filters.push(format!(
+                "[{label}]asplit={}{}",
+                outs.len(),
+                outs.iter().map(|o| format!("[{o}]")).collect::<String>()
+            ));
+            for (send, out) in sends.iter().zip(&outs[1..]) {
+                let sent = format!("{out}s");
+                filters.push(format!(
+                    "[{out}]volume={:.4}[{sent}]",
+                    send.level.clamp(0.0, 4.0)
+                ));
+                inputs.entry(send.bus.as_str()).or_default().push(sent);
+            }
+            outs[0].clone()
+        };
+        match track.output.as_deref().filter(|b| bus_ids.contains(b)) {
+            Some(bus) => inputs.entry(bus).or_default().push(main),
+            None => to_master.push(main),
+        }
+    }
+
+    for (i, bus) in project.buses.iter().enumerate() {
+        let Some(parts) = inputs.get(bus.id.as_str()) else {
+            continue;
+        };
+        let joined: String = parts.iter().map(|l| format!("[{l}]")).collect();
+        let out = format!("bus{i}");
+        if bus.muted {
+            // Every label must be consumed, or ffmpeg rejects the graph.
+            for p in parts {
+                filters.push(format!("[{p}]anullsink"));
+            }
+            continue;
+        }
+        let mut chain = vec![if parts.len() == 1 {
+            "anull".to_string()
+        } else {
+            format!(
+                "amix=inputs={}:dropout_transition=0:normalize=0",
+                parts.len()
+            )
+        }];
+        for effect in bus.effects.iter().filter(|e| e.is_audio()) {
+            let c = effect.compile(total, project.width, project.height, project.fps);
+            // A bus effect is static: sendcmd cannot reach it through the
+            // shared chain, so animated values keep their first value.
+            chain.extend(c.filters);
+        }
+        let gain = bus.volume.clamp(0.0, 4.0);
+        if (gain - 1.0).abs() > 0.001 {
+            chain.push(format!("volume={gain:.4}"));
+        }
+        if bus.pan.abs() > 0.001 {
+            let p = bus.pan.clamp(-1.0, 1.0);
+            chain.push(format!(
+                "pan=stereo|c0={:.4}*c0|c1={:.4}*c1",
+                (1.0 - p).min(1.0),
+                (1.0 + p).min(1.0)
+            ));
+        }
+        filters.push(format!("{joined}{}[{out}]", chain.join(",")));
+        to_master.push(out);
+    }
+    *labels = to_master;
+}
+
 /// `sendcmd` targets a filter by name and applies to every matching filter in
 /// its own chain, so two animated blurs on one clip would otherwise receive
 /// each other's commands. Giving each command-driven effect its own chain,
@@ -5193,11 +5572,41 @@ pub fn to_otio(project: &Project, name: &str) -> String {
                 }),
                 _ => serde_json::json!({ "OTIO_SCHEMA": "MissingReference.1" }),
             };
+            let name = if !clip.name.is_empty() {
+                clip.name.clone()
+            } else {
+                match &clip.source {
+                    Source::Media { path } | Source::Still { path } => {
+                        path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
+                    }
+                    Source::Nested { name, .. } => name.clone(),
+                    _ => clip.id.clone(),
+                }
+            };
+            // Other editors read the range; Odyssey reads the whole clip back
+            // from the metadata, so effects and motion survive a round trip.
+            // The range is the clip's length on the track, as OTIO counts it.
+            // A constant speed is a time warp to other editors. A ramp has no
+            // OTIO form and travels only in the metadata.
+            let speed = clip.speed.first().abs().max(0.01);
+            let warp = if clip.speed.is_animated() || ((speed - 1.0).abs() < 1e-9 && !clip.reverse)
+            {
+                Vec::new()
+            } else {
+                vec![serde_json::json!({
+                    "OTIO_SCHEMA": "LinearTimeWarp.1",
+                    "name": "",
+                    "effect_name": "LinearTimeWarp",
+                    "time_scalar": if clip.reverse { -speed } else { speed },
+                })]
+            };
             children.push(serde_json::json!({
                 "OTIO_SCHEMA": "Clip.1",
-                "name": clip.id,
-                "source_range": range(clip.in_point, clip.source_duration()),
+                "name": name,
+                "source_range": range(clip.in_point, clip.end() - clip.start),
                 "media_reference": target,
+                "effects": warp,
+                "metadata": { "odyssey": { "clip": clip } },
             }));
             cursor = clip.end();
         }
@@ -5210,6 +5619,20 @@ pub fn to_otio(project: &Project, name: &str) -> String {
         }));
     }
 
+    let markers: Vec<serde_json::Value> = project
+        .markers
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "OTIO_SCHEMA": "Marker.2",
+                "name": m.name,
+                "color": otio_colour(&m.colour),
+                "marked_range": range(m.time, m.duration),
+                "metadata": { "odyssey": { "comment": m.comment, "colour": m.colour } },
+            })
+        })
+        .collect();
+
     let doc = serde_json::json!({
         "OTIO_SCHEMA": "Timeline.1",
         "name": name,
@@ -5218,9 +5641,45 @@ pub fn to_otio(project: &Project, name: &str) -> String {
             "OTIO_SCHEMA": "Stack.1",
             "name": "tracks",
             "children": otio_tracks,
+            "markers": markers,
         },
     });
     serde_json::to_string_pretty(&doc).unwrap_or_default()
+}
+
+/// OTIO names eight marker colours. A hex colour goes to the nearest by hue.
+fn otio_colour(hex: &str) -> &'static str {
+    let h = hex.trim_start_matches('#');
+    let c = |i: usize| {
+        h.get(i..i + 2)
+            .and_then(|v| u8::from_str_radix(v, 16).ok())
+            .map(|v| v as f64 / 255.0)
+    };
+    let (Some(r), Some(g), Some(b)) = (c(0), c(2), c(4)) else {
+        return "RED";
+    };
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    if max - min < 0.1 {
+        return if max > 0.5 { "WHITE" } else { "BLACK" };
+    }
+    let d = max - min;
+    let hue = if max == r {
+        60.0 * (((g - b) / d).rem_euclid(6.0))
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    match hue as u32 {
+        0..=14 | 345..=360 => "RED",
+        15..=44 => "ORANGE",
+        45..=69 => "YELLOW",
+        70..=159 => "GREEN",
+        160..=199 => "CYAN",
+        200..=259 => "BLUE",
+        260..=299 => "PURPLE",
+        _ => "PINK",
+    }
 }
 
 /// Serialise the subtitle list as SRT.
@@ -6272,6 +6731,8 @@ pub(crate) mod tests {
         Track {
             sync_lock: true,
             pan: 0.0,
+            output: None,
+            sends: Vec::new(),
             id: "t1".into(),
             name: "V1".into(),
             kind: TrackKind::Video,
@@ -9309,6 +9770,8 @@ mod e2e {
         Track {
             sync_lock: true,
             pan: 0.0,
+            output: None,
+            sends: Vec::new(),
             id: id.into(),
             name: id.into(),
             kind: TrackKind::Video,
@@ -11730,6 +12193,8 @@ mod proxy_contract {
             tracks: vec![Track {
                 sync_lock: true,
                 pan: 0.0,
+                output: None,
+                sends: Vec::new(),
                 id: "t".into(),
                 name: "V1".into(),
                 kind: TrackKind::Video,
@@ -11832,6 +12297,8 @@ mod webview_playback {
             tracks: vec![Track {
                 sync_lock: true,
                 pan: 0.0,
+                output: None,
+                sends: Vec::new(),
                 id: "t".into(),
                 name: "V1".into(),
                 kind: TrackKind::Video,
@@ -11932,6 +12399,8 @@ mod stress {
         Track {
             sync_lock: true,
             pan: 0.0,
+            output: None,
+            sends: Vec::new(),
             id: id.into(),
             name: id.into(),
             kind: TrackKind::Video,
@@ -12369,6 +12838,8 @@ mod premiere_features {
             duck_release: 300.0,
             sync_lock: true,
             pan: 0.0,
+            output: None,
+            sends: Vec::new(),
         }
     }
 
@@ -12802,6 +13273,218 @@ mod premiere_features {
             .parse()
             .unwrap();
         assert!((dur - 2.0).abs() < 0.3, "expected ~2s, got {dur}");
+    }
+
+    fn volume_of(path: &Path) -> (f64, f64) {
+        let out = Command::new("ffmpeg")
+            .args(["-hide_banner", "-i"])
+            .arg(path)
+            .args(["-af", "volumedetect", "-vn", "-f", "null", "-"])
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stderr);
+        let read = |key: &str| {
+            text.lines()
+                .find_map(|l| l.split(key).nth(1))
+                .and_then(|v| v.trim().trim_end_matches(" dB").parse::<f64>().ok())
+                .unwrap_or(-200.0)
+        };
+        (read("mean_volume:"), read("max_volume:"))
+    }
+
+    fn bus(id: &str) -> Bus {
+        Bus {
+            id: id.into(),
+            name: id.into(),
+            volume: 1.0,
+            muted: false,
+            pan: 0.0,
+            effects: vec![],
+        }
+    }
+
+    #[test]
+    fn buses_submix_their_tracks_and_take_sends() {
+        let s = PathBuf::from("/nonexistent/but/not/read.mp4");
+        let mut a = track("A1", TrackKind::Audio, vec![media("x", &s, 0.0, 0.0, 1.0)]);
+        a.output = Some("dialogue".into());
+        a.sends = vec![Send {
+            bus: "verb".into(),
+            level: 0.5,
+        }];
+        let mut b = track("A2", TrackKind::Audio, vec![media("y", &s, 0.0, 0.0, 1.0)]);
+        b.output = Some("dialogue".into());
+        let mut verb = bus("verb");
+        verb.effects = vec![serde_json::from_value(serde_json::json!({"kind": "echo"})).unwrap()];
+        let mut labels = vec!["a0".to_string(), "a1".to_string()];
+        let owners = vec![
+            ("a0".to_string(), "A1".to_string()),
+            ("a1".to_string(), "A2".to_string()),
+        ];
+        let p = Project {
+            tracks: vec![a, b],
+            buses: vec![bus("dialogue"), verb],
+            ..Default::default()
+        };
+        let mut filters = Vec::new();
+        route_buses(&p, &mut labels, &owners, &mut filters, 1.0);
+        let g = filters.join(";");
+        assert!(g.contains("[a0]asplit=2[r0_0][r0_1]"), "{g}");
+        assert!(g.contains("[r0_1]volume=0.5000[r0_1s]"), "{g}");
+        assert!(
+            g.contains("[r0_0][a1]amix=inputs=2"),
+            "both tracks sum on the bus: {g}"
+        );
+        assert!(
+            g.contains("[r0_1s]anull,aecho"),
+            "the send reaches the echo bus: {g}"
+        );
+        assert_eq!(
+            labels,
+            vec!["bus0", "bus1"],
+            "only the buses reach the master"
+        );
+    }
+
+    #[test]
+    fn a_send_adds_its_level_and_a_muted_bus_is_silent() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let src = make_media("bus-tone", 1.0, 440);
+        let render_with = |name: &str, edit: &dyn Fn(&mut Project)| {
+            let mut p = small(vec![track(
+                "A1",
+                TrackKind::Audio,
+                vec![media("m", &src, 0.0, 0.0, 1.0)],
+            )]);
+            p.buses = vec![bus("b")];
+            edit(&mut p);
+            let out = scratch(&format!("odyssey-pf-bus-{name}.mp4"));
+            render(&p, &profile("mp4-h264-fast"), &out).unwrap_or_else(|e| panic!("{name}: {e}"));
+            volume_of(&out)
+        };
+        let (plain, _) = render_with("plain", &|_| {});
+        let (sent, _) = render_with("sent", &|p| {
+            p.tracks[0].sends = vec![Send {
+                bus: "b".into(),
+                level: 1.0,
+            }]
+        });
+        // The same signal twice over is 6 dB up.
+        assert!(
+            (sent - plain - 6.0).abs() < 1.0,
+            "plain {plain} dB, with a unity send {sent} dB"
+        );
+        // A bus with its own effect, fader and pan, fed by output and send.
+        let (fx, _) = render_with("fx", &|p| {
+            p.tracks[0].output = Some("b".into());
+            p.buses[0].effects =
+                vec![serde_json::from_value(serde_json::json!({"kind": "echo"})).unwrap()];
+            p.buses[0].volume = 0.5;
+            p.buses[0].pan = -0.5;
+        });
+        assert!(fx > -60.0, "the bus is heard: {fx} dB");
+        // With a picture to export; with nothing audible and nothing to see,
+        // the render refuses, as it does when every track is muted.
+        let (_, peak) = render_with("muted", &|p| {
+            p.tracks[0].output = Some("b".into());
+            p.buses[0].muted = true;
+            p.tracks
+                .push(track("V1", TrackKind::Video, vec![colour("c", 0.0, 1.0)]));
+        });
+        assert!(
+            peak < -60.0,
+            "a track routed to a muted bus is heard at {peak} dB"
+        );
+    }
+
+    #[test]
+    fn title_layers_draw_and_grow_in() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let _guard = render_lock();
+        let style = TitleStyle {
+            opaque: false,
+            layers: vec![
+                TitleLayer::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 50.0,
+                    h: 50.0,
+                    color: "#ff0000".into(),
+                    outline: 0.0,
+                    outline_color: "white".into(),
+                    appear: 0.0,
+                    reveal: 1.0,
+                },
+                TitleLayer::Text {
+                    text: "Name: 100%".into(),
+                    size: 14.0,
+                    color: "white".into(),
+                    x: 75.0,
+                    y: 80.0,
+                    align: "right".into(),
+                    stroke_width: 1.0,
+                    stroke_color: "black".into(),
+                    shadow: 1.0,
+                    shadow_color: "black@0.5".into(),
+                    box_enabled: true,
+                    box_color: "black@0.5".into(),
+                    box_padding: 4.0,
+                    appear: 0.5,
+                    reveal: 0.5,
+                },
+            ],
+            ..Default::default()
+        };
+        let card = base_clip(
+            "t",
+            Source::Title {
+                text: String::new(),
+                background: "black".into(),
+                size: 18.0,
+                color: "white".into(),
+                style: Box::new(style),
+            },
+            0.0,
+            0.0,
+            2.0,
+        );
+        let p = small(vec![
+            track("V1", TrackKind::Video, vec![colour("u", 0.0, 2.0)]),
+            track("V2", TrackKind::Video, vec![card]),
+        ]);
+        let out = scratch("odyssey-pf-title-layers.mp4");
+        render(&p, &profile("mp4-h264-fast"), &out).unwrap_or_else(|e| panic!("{e}"));
+        let px = |at: f64, x: u32, y: u32| -> (u8, u8, u8) {
+            let o = Command::new("ffmpeg")
+                .args(["-v", "error", "-ss", &format!("{at:.3}"), "-i"])
+                .arg(&out)
+                .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
+                .output()
+                .unwrap()
+                .stdout;
+            let i = ((y * 160 + x) * 3) as usize;
+            (o[i], o[i + 1], o[i + 2])
+        };
+        let red = |c: (u8, u8, u8)| c.0 > 180 && c.1 < 80 && c.2 < 80;
+        // The box ends at x=80. Early on it has grown only part of the way,
+        // and the card is transparent, so the colour beneath shows there.
+        assert!(red(px(0.2, 5, 30)), "the grown part: {:?}", px(0.2, 5, 30));
+        assert!(
+            !red(px(0.2, 70, 30)),
+            "not yet grown: {:?}",
+            px(0.2, 70, 30)
+        );
+        assert!(red(px(1.5, 70, 30)), "fully grown: {:?}", px(1.5, 70, 30));
+        let beneath = px(1.5, 150, 30);
+        assert!(
+            beneath.2 > beneath.0 + 40,
+            "outside the box the track beneath shows: {beneath:?}"
+        );
     }
 
     #[test]
