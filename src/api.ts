@@ -61,6 +61,35 @@ export interface TrackResult {
   lost: boolean;
 }
 
+/** A clip read from an EDL or OTIO file, placed but not yet built. */
+export interface ImportedClip {
+  lane: "video" | "audio";
+  track: number;
+  name: string;
+  /** Null when the file was not found; `wanted` is where it was expected. */
+  path: string | null;
+  wanted: string;
+  generator: string | null;
+  start: number;
+  in_point: number;
+  out_point: number;
+  speed: number;
+  reverse: boolean;
+  transition: [string, number] | null;
+  /** The whole clip, when the file came from Odyssey's own OTIO export. */
+  odyssey: Record<string, unknown> | null;
+}
+
+export interface Imported {
+  title: string;
+  video_tracks: string[];
+  audio_tracks: string[];
+  clips: ImportedClip[];
+  markers: Array<{ time: number; duration: number; name: string; colour: string; comment: string }>;
+  missing: string[];
+  warnings: string[];
+}
+
 export const api = {
   listItems: async (query: Query = {}) =>
     isTauri() ? invoke<Item[]>("list_items", { query }) : devStore.listItems(query),
@@ -109,6 +138,9 @@ export const api = {
     invoke<string>("export_edl", { project: renderable(project), title }),
   exportOtio: (project: Project, name: string) =>
     invoke<string>("export_otio", { project: renderable(project), name }),
+  /** Read an EDL or OTIO file, finding its media among `known` paths. */
+  importInterchange: (path: string, fps: number, known: string[]) =>
+    invoke<Imported>("import_interchange", { path, fps, known }),
   analyseStabilisation: (source: string) => invoke<string>("analyse_stabilisation", { source }),
   freezeFrame: (source: string, at: number) => invoke<string>("freeze_frame", { source, at }),
   renderZone: (project: Project, profile: RenderProfile, output: string, start: number, end: number) =>

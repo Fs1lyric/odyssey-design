@@ -4,9 +4,10 @@
  *  one can be reasoned about (and exercised) without a DOM. They mutate the
  *  project they are given; the editor wraps every call in its undo snapshot. */
 import {
-  clipDuration, clipEnd, isAnimated, paramAt, sourceDuration, splitClip,
-  type Clip, type Project, type Track,
+  clipDuration, clipEnd, isAnimated, makeClip, newTrack, paramAt, sourceDuration, splitClip,
+  type Clip, type MulticamGroup, type Project, type Source, type Track, type TransitionKind,
 } from "./timeline";
+import type { Imported, ImportedClip } from "./api";
 
 const EPS = 1e-6;
 
@@ -356,4 +357,128 @@ export function speedForDuration(clip: Clip, seconds: number): number {
 /** The static speed of a clip, or null while it is ramped. */
 export function staticSpeed(clip: Clip): number | null {
   return isAnimated(clip.speed) ? null : Math.abs(paramAt(clip.speed, 0)) || 1;
+}
+
+/** Build a clip from one an EDL or OTIO file described. A clip that came from
+ *  Odyssey's own OTIO export is restored whole; anything else starts from the
+ *  defaults with only what the list carries: range, speed and transition. */
+export function importedClip(c: ImportedClip, isStill: (path: string) => boolean): Clip {
+  let source: Source;
+  if (c.generator === "bars") source = { type: "bars" };
+  else if (c.generator) source = { type: "color", color: c.generator };
+  else {
+    const path = c.path ?? c.wanted;
+    source = isStill(path) ? { type: "still", path } : { type: "media", path };
+  }
+  const base = makeClip(source, c.start, c.out_point, c.in_point);
+  if (c.odyssey) {
+    const full = { ...base, ...(c.odyssey as Partial<Clip>), id: base.id, start: c.start };
+    // The file may have been found somewhere other than where it was saved.
+    if ((full.source.type === "media" || full.source.type === "still") && c.path) {
+      full.source = { ...full.source, path: c.path };
+    }
+    return full;
+  }
+  base.name = c.path || c.generator ? "" : c.name;
+  base.speed = c.speed;
+  base.reverse = c.reverse;
+  if (c.transition) {
+    base.transition_in = { kind: c.transition[0] as TransitionKind, duration: c.transition[1], curve: "qsin" };
+  }
+  return base;
+}
+
+/** Put an imported timeline into the project. An empty project takes it on
+ *  its own tracks; otherwise it lands on new tracks above what is there, so
+ *  nothing already cut is touched. Picture and sound of one event are linked.
+ *  Returns the tracks that received clips. */
+export function placeImported(p: Project, im: Imported, isStill: (path: string) => boolean): Track[] {
+  const empty = p.tracks.every((t) => !t.clips.length);
+  const prefix = empty || !im.title ? "" : `${im.title} `;
+  const lanes = { video: [] as Track[], audio: [] as Track[] };
+  for (const kind of ["video", "audio"] as const) {
+    const names = kind === "video" ? im.video_tracks : im.audio_tracks;
+    const existing = empty ? p.tracks.filter((t) => t.kind === kind) : [];
+    names.forEach((name, i) => {
+      let track = existing[i];
+      if (!track) {
+        track = newTrack(`${prefix}${name}`, kind);
+        p.tracks.push(track);
+      }
+      lanes[kind].push(track);
+    });
+  }
+
+  const touched = new Set<Track>();
+  const byEvent = new Map<string, Clip[]>();
+  for (const c of im.clips) {
+    const track = lanes[c.lane][c.track];
+    if (!track) continue;
+    const clip = importedClip(c, isStill);
+    track.clips.push(clip);
+    touched.add(track);
+    if (c.odyssey) continue;
+    const key = [c.name, c.start.toFixed(4), c.in_point.toFixed(4), c.out_point.toFixed(4)].join("|");
+    byEvent.set(key, [...(byEvent.get(key) ?? []), clip]);
+  }
+  for (const clips of byEvent.values()) {
+    if (clips.length < 2) continue;
+    const link = crypto.randomUUID();
+    for (const c of clips) c.link = link;
+  }
+  for (const m of im.markers) {
+    p.markers.push({
+      id: crypto.randomUUID(), time: m.time, duration: m.duration, name: m.name,
+      colour: m.colour, comment: m.comment, kind: "comment",
+    });
+  }
+  return [...touched];
+}
+
+/** Choose where a multicam group's sound comes from. Following the cut, each
+ *  angle clip plays its own camera. Fixed to an angle, the angle clips go
+ *  silent and that camera's sound is laid on an audio track under them, one
+ *  clip per cut joined wherever the cuts are continuous, so a take cut twenty
+ *  times plays as one unbroken recording. Call it again after moving or
+ *  trimming the cuts to lay the sound afresh. Returns the audio clips laid. */
+export function setMulticamAudio(p: Project, group: MulticamGroup, angle: number | null): Clip[] {
+  group.audio = angle;
+  const cuts = p.tracks.flatMap((t) => t.clips).filter((c) => c.multicam?.group === group.id);
+  for (const t of p.tracks) t.clips = t.clips.filter((c) => c.multicam_audio !== group.id);
+  for (const c of cuts) c.muted = angle !== null;
+  const source = angle === null ? undefined : group.angles[angle];
+  if (!source) {
+    // Drop the group's audio track if rebuilding left it empty.
+    p.tracks = p.tracks.filter((t) => !(t.kind === "audio" && t.name === `${group.name} audio` && !t.clips.length));
+    return [];
+  }
+
+  const name = `${group.name} audio`;
+  let track = p.tracks.find((t) => t.kind === "audio" && t.name === name);
+  if (!track) {
+    track = newTrack(name, "audio");
+    p.tracks.push(track);
+  }
+  for (const cut of [...cuts].sort((a, b) => a.start - b.start)) {
+    const from = group.angles[cut.multicam!.angle];
+    if (!from) continue;
+    // The same moment of the take in the fixed camera's file.
+    const shift = source.offset - from.offset;
+    const rate = Math.abs(paramAt(cut.speed, 0)) || 1;
+    let a = cut.in_point + shift;
+    let b = cut.out_point + shift;
+    let start = cut.start;
+    // Where that camera was not rolling there is nothing to play.
+    if (a < 0) { start += -a / rate; a = 0; }
+    b = Math.min(b, source.duration);
+    if (b - a < 1e-3) continue;
+    const clip = makeClip({ type: "media", path: source.path }, start, b, a);
+    clip.speed = cut.speed;
+    clip.reverse = cut.reverse;
+    clip.name = name;
+    clip.multicam_audio = group.id;
+    track.clips.push(clip);
+  }
+  joinThroughEdits([track]);
+  return track.clips.filter((c) => c.multicam_audio === group.id);
 }

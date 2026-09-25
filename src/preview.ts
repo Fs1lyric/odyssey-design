@@ -13,7 +13,7 @@
  *  shows the exact frame ffmpeg renders instead of an approximation.
  */
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { Clip, MulticamGroup, Param, PreviewChunk, Project, Track } from "./timeline";
+import type { Clip, MulticamGroup, Param, PreviewChunk, Project, TitleLayer, Track } from "./timeline";
 import { paramAt, clipDuration, clipEnd, sourceTimeAt, speedAtOutput, BLEND_CANVAS, applyTransitions, isIdentityMotion } from "./timeline";
 import { FxPipeline, type Surface } from "./fxpipe";
 import { LoudnessMeter } from "./loudness";
@@ -53,6 +53,11 @@ export class Preview {
   private trackPan = new Map<string, StereoPannerNode>();
   /** The master bus every track feeds: fader, then a meter, then output. */
   private master: { gain: GainNode; meter: AnalyserNode } | null = null;
+  /** Submixes: summing fader, pan, meter, then the master. Their effects are
+   *  ffmpeg filters and, like clip audio effects, are heard in the export. */
+  private buses = new Map<string, { gain: GainNode; pan: StereoPannerNode; meter: AnalyserNode }>();
+  /** One gain per track and bus a send joins, keyed `track|bus`. */
+  private sendGains = new Map<string, GainNode>();
   private sources = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
   private meterBuf = new Float32Array(1024);
   private r128: LoudnessMeter | null = null;
@@ -275,12 +280,50 @@ export class Preview {
       const pan = ctx.createStereoPanner();
       gain.connect(pan);
       pan.connect(meter);
-      meter.connect(this.masterBus(ctx).gain);
       this.trackGain.set(trackId, gain);
       this.trackMeter.set(trackId, meter);
       this.trackPan.set(trackId, pan);
+      this.routeTrackOut(trackId);
     }
     return { gain, meter };
+  }
+
+  private busNodes(ctx: AudioContext, busId: string) {
+    let b = this.buses.get(busId);
+    if (!b) {
+      b = { gain: ctx.createGain(), pan: ctx.createStereoPanner(), meter: ctx.createAnalyser() };
+      b.meter.fftSize = 2048;
+      b.gain.connect(b.pan);
+      b.pan.connect(b.meter);
+      b.meter.connect(this.masterBus(ctx).gain);
+      this.buses.set(busId, b);
+    }
+    return b;
+  }
+
+  /** Connect a track's meter to its output (a bus or the master) and to a
+   *  gain per send, as route_buses in timeline.rs routes the export. */
+  private routeTrackOut(trackId: string) {
+    const ctx = this.audio;
+    const meter = this.trackMeter.get(trackId);
+    const track = this.project.tracks.find((t) => t.id === trackId);
+    if (!ctx || !meter) return;
+    try { meter.disconnect(); } catch { /* not connected yet */ }
+    const buses = new Set((this.project.buses ?? []).map((b) => b.id));
+    const out = track?.output && buses.has(track.output) ? this.busNodes(ctx, track.output).gain : this.masterBus(ctx).gain;
+    meter.connect(out);
+    for (const send of track?.sends ?? []) {
+      if (!buses.has(send.bus) || send.level <= 0) continue;
+      const key = `${trackId}|${send.bus}`;
+      let g = this.sendGains.get(key);
+      if (!g) {
+        g = ctx.createGain();
+        g.connect(this.busNodes(ctx, send.bus).gain);
+        this.sendGains.set(key, g);
+      }
+      g.gain.value = Math.min(4, send.level);
+      meter.connect(g);
+    }
   }
 
   private masterBus(ctx: AudioContext): { gain: GainNode; meter: AnalyserNode } {
@@ -338,13 +381,21 @@ export class Preview {
       nodes.gain.gain.value = silent ? 0 : Math.max(0, track.volume);
       const pan = this.trackPan.get(track.id);
       if (pan) pan.pan.value = clamp(track.pan ?? 0, -1, 1);
+      this.routeTrackOut(track.id);
     }
-    if (this.audio) this.masterBus(this.audio).gain.gain.value = Math.max(0, this.project.master_volume ?? 1);
+    if (this.audio) {
+      for (const bus of this.project.buses ?? []) {
+        const b = this.busNodes(this.audio, bus.id);
+        b.gain.gain.value = bus.muted ? 0 : Math.max(0, bus.volume);
+        b.pan.pan.value = clamp(bus.pan, -1, 1);
+      }
+      this.masterBus(this.audio).gain.gain.value = Math.max(0, this.project.master_volume ?? 1);
+    }
   }
 
   /** Peak level of a track since the last read, 0..1. Used by the mixer. */
   levelOf(trackId: string): number {
-    const meter = trackId === "master" ? this.master?.meter : this.trackMeter.get(trackId);
+    const meter = trackId === "master" ? this.master?.meter : this.trackMeter.get(trackId) ?? this.buses.get(trackId)?.meter;
     if (!meter) return 0;
     if (meter.fftSize !== this.meterBuf.length) this.meterBuf = new Float32Array(meter.fftSize);
     meter.getFloatTimeDomainData(this.meterBuf);
@@ -1124,6 +1175,58 @@ function drawTitle(
     }
     paintWith(ctx, src.color, () => ctx.fillText(line, x, ly));
   });
+  for (const layer of st?.layers ?? []) drawTitleLayer(ctx, layer, local, w, h);
+}
+
+/** One extra title layer, mirroring title_layer_filters: text fades in over
+ *  its reveal, a shape grows from its left edge one frame's slice at a time. */
+function drawTitleLayer(ctx: CanvasRenderingContext2D, layer: TitleLayer, local: number, w: number, h: number) {
+  if (local < layer.appear) return;
+  const into = local - layer.appear;
+  if (layer.type === "rect") {
+    const grown = layer.reveal > 0 ? clamp01(into / layer.reveal) : 1;
+    const bx = Math.round(w * layer.x / 100), by = Math.round(h * layer.y / 100);
+    const bw = Math.max(1, Math.round(w * layer.w / 100)), bh = Math.max(1, Math.round(h * layer.h / 100));
+    paintWith(ctx, layer.color, () => ctx.fillRect(bx, by, Math.max(1, Math.round(bw * grown)), bh));
+    if (layer.outline > 0 && grown >= 1) {
+      // drawbox draws its thickness inside the box.
+      const t = layer.outline;
+      paintWith(ctx, layer.outline_color, () => {
+        ctx.lineWidth = t;
+        ctx.strokeRect(bx + t / 2, by + t / 2, bw - t, bh - t);
+      });
+    }
+    return;
+  }
+  ctx.save();
+  ctx.globalAlpha *= layer.reveal > 0 ? clamp01(into / layer.reveal) : 1;
+  ctx.font = `${layer.size}px "Adwaita Sans", system-ui, sans-serif`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  const lines = layer.text.split("\n");
+  const lineH = layer.size * 1.2;
+  const textW = Math.max(0, ...lines.map((l) => ctx.measureText(l).width));
+  const textH = lines.length * lineH;
+  const ax = w * layer.x / 100;
+  const x = layer.align === "left" ? ax : layer.align === "right" ? ax - textW : ax - textW / 2;
+  const y = h * layer.y / 100 - textH / 2;
+  if (layer.box_enabled) {
+    const pad = layer.box_padding;
+    paintWith(ctx, layer.box_color, () => ctx.fillRect(x - pad, y - pad, textW + pad * 2, textH + pad * 2));
+  }
+  lines.forEach((line, i) => {
+    const ly = y + i * lineH;
+    if (layer.shadow) paintWith(ctx, layer.shadow_color, () => ctx.fillText(line, x + layer.shadow, ly + layer.shadow));
+    if (layer.stroke_width) {
+      paintWith(ctx, layer.stroke_color, () => {
+        ctx.lineJoin = "round";
+        ctx.lineWidth = layer.stroke_width * 2;
+        ctx.strokeText(line, x, ly);
+      });
+    }
+    paintWith(ctx, layer.color, () => ctx.fillText(line, x, ly));
+  });
+  ctx.restore();
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));

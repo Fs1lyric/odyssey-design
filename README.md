@@ -146,8 +146,11 @@ Also covered: ripple, roll, slip and slide with a two-up trim monitor and a
 numeric readout; nested sequences edited in place with a breadcrumb back out;
 an EBU R128 meter (momentary, short-term, integrated) on the master bus plus
 an ffmpeg `ebur128` measurement of the actual export; mask tracking, with text
-that can follow the tracked mask; and multicam, with angles synced by their
-audio (GCC-PHAT) and cut live from a grid with 1–9.
+that can follow the tracked mask; multicam, with angles synced by their
+audio (GCC-PHAT), cut live from a grid with 1–9, and optionally one angle's
+sound held under every cut; audio buses with sends, effects, fader and pan;
+title cards with layered text and shapes; and EDL and OTIO import alongside
+the export.
 
 Preview fidelity, measured rather than asserted: `scripts/preview-parity`
 renders a test still through the real export path once per effect and compares

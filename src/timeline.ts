@@ -45,6 +45,39 @@ export interface TitleStyle {
   scroll: "none" | "roll" | "crawl";
   /** Off gives a transparent card, for text over the tracks beneath. */
   opaque: boolean;
+  /** Further text and shapes over the main text, in drawing order. */
+  layers: TitleLayer[];
+}
+
+/** One item of a title card beyond its main text. Positions and sizes are
+ *  percentages of the frame. Mirrors TitleLayer in timeline.rs. */
+export type TitleLayer =
+  | {
+      type: "text"; text: string; size: number; color: string;
+      /** The anchor: vertical centre, and left edge, centre or right edge. */
+      x: number; y: number; align: "left" | "center" | "right";
+      stroke_width: number; stroke_color: string; shadow: number; shadow_color: string;
+      box_enabled: boolean; box_color: string; box_padding: number;
+      /** Seconds into the clip before it shows, and to fade in after. */
+      appear: number; reveal: number;
+    }
+  | {
+      type: "rect"; x: number; y: number; w: number; h: number; color: string;
+      outline: number; outline_color: string;
+      /** Seconds into the clip before it shows, and to grow in after. */
+      appear: number; reveal: number;
+    };
+
+export function newTitleText(text = "Text"): TitleLayer {
+  return {
+    type: "text", text, size: 48, color: "white", x: 50, y: 50, align: "center",
+    stroke_width: 0, stroke_color: "black", shadow: 0, shadow_color: "black@0.6",
+    box_enabled: false, box_color: "black@0.6", box_padding: 16, appear: 0, reveal: 0,
+  };
+}
+
+export function newTitleRect(): TitleLayer {
+  return { type: "rect", x: 5, y: 70, w: 40, h: 12, color: "#2C5FC9", outline: 0, outline_color: "white", appear: 0, reveal: 0 };
 }
 
 export function defaultTitleStyle(): TitleStyle {
@@ -52,7 +85,7 @@ export function defaultTitleStyle(): TitleStyle {
     align: "center", valign: "middle", offset_x: 0, offset_y: 0,
     stroke_width: 0, stroke_color: "black", shadow: 0, shadow_color: "black@0.6",
     box_enabled: false, box_color: "black@0.6", box_padding: 16,
-    scroll: "none", opaque: true,
+    scroll: "none", opaque: true, layers: [],
   };
 }
 
@@ -357,6 +390,9 @@ export interface Clip {
   /** Set on a clip cut from a multicam group: which group and which angle
    *  it currently shows. Editor state; the renderer sees a media clip. */
   multicam?: { group: string; angle: number };
+  /** Set on the sound a multicam group plays under every cut when its audio
+   *  is fixed to one angle: which group. Rebuilt whenever that choice changes. */
+  multicam_audio?: string;
 }
 
 /** One camera of a multicam group. `offset` is what to add to a time on the
@@ -373,6 +409,9 @@ export interface MulticamGroup {
   id: string;
   name: string;
   angles: MulticamAngle[];
+  /** Null or absent: each cut plays its own camera's sound. A number: that
+   *  angle's sound runs under every cut, as Premiere's fixed multicam audio. */
+  audio?: number | null;
 }
 
 /** How frames are made for a speed change. Premiere's Time Interpolation. */
@@ -453,6 +492,26 @@ export interface Track {
   sync_lock: boolean;
   /** Stereo balance, -1 left to 1 right. */
   pan: number;
+  /** The bus this track feeds; null (or a deleted bus) is the master. */
+  output: string | null;
+  /** Copies of the track's sound, after its fader, sent to buses. */
+  sends: AudioSend[];
+}
+
+export interface AudioSend {
+  bus: string;
+  level: number;
+}
+
+/** A submix between tracks and the master. Mirrors Bus in timeline.rs. */
+export interface Bus {
+  id: string;
+  name: string;
+  volume: number;
+  muted: boolean;
+  pan: number;
+  /** Audio effects only, applied to the summed bus in the export. */
+  effects: Effect[];
 }
 
 export interface BinItem {
@@ -501,6 +560,7 @@ export interface Project {
   master_volume: number;
   /** Multicam groups, editor state that the renderer never needs. */
   multicam?: MulticamGroup[];
+  buses: Bus[];
 }
 
 export interface PreviewChunk {
@@ -572,6 +632,7 @@ export function emptyProject(): Project {
     sample_rate: 48000,
     background: "black",
     master_volume: 1,
+    buses: [],
   };
 }
 
@@ -596,7 +657,13 @@ export function newTrack(name: string, kind: "video" | "audio"): Track {
     duck_release: 300,
     sync_lock: true,
     pan: 0,
+    output: null,
+    sends: [],
   };
+}
+
+export function newBus(name: string): Bus {
+  return { id: crypto.randomUUID(), name, volume: 1, muted: false, pan: 0, effects: [] };
 }
 
 export function isAnimated(p: Param): p is { keyframes: Keyframe[] } {
@@ -1253,6 +1320,8 @@ export function applyTransitions(project: Project): Project {
 /** Fill fields that older saved projects predate, in place. */
 export function migrateProject(p: Project): Project {
   p.master_volume ??= 1;
+  p.buses ??= [];
+  for (const b of p.buses) b.effects ??= [];
   for (const m of p.markers) {
     m.comment ??= "";
     m.duration ??= 0;
@@ -1269,6 +1338,8 @@ export function migrateProject(p: Project): Project {
     t.duck_release ??= 300;
     t.sync_lock ??= true;
     t.pan ??= 0;
+    t.output ??= null;
+    t.sends ??= [];
     for (const c of t.clips) {
       c.motion ??= defaultMotion();
       c.blend ??= "normal";
