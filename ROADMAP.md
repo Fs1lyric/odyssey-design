@@ -29,7 +29,7 @@ These are design consequences rather than missing work, and are explained in
 - `sendcmd` targets filters by name. Each animated effect is isolated in its
   own chain, so there is no cross-talk, at the cost of a longer graph.
 - Rendering is one ffmpeg process per export. There is no partial re-render.
-- GPU export accelerates the ends of the pipeline — decode and encode — but the
+- GPU export accelerates the ends of the pipeline - decode and encode - but the
   compositing between them runs in software filters. Moving the graph itself
   onto the GPU means a second renderer written in hardware filters, not a flag.
 - There is no GPU playback pipeline: the monitor's shaders composite for the

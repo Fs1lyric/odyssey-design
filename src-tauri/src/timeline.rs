@@ -1,4 +1,4 @@
-//! Odyssey Video — the multi-track timeline engine.
+//! Odyssey Video - the multi-track timeline engine.
 //!
 //! Written from scratch against ffmpeg. The model is a project containing
 //! tracks, tracks containing clips positioned on an absolute timeline, and
@@ -110,7 +110,7 @@ impl Param {
 
     /// The reference implementation of keyframe interpolation. `to_expr` is
     /// what ffmpeg renders from, and `paramAt` in timeline.ts mirrors this for
-    /// the preview — so this is the definition the other two are tested against.
+    /// the preview - so this is the definition the other two are tested against.
     #[allow(dead_code)]
     pub fn value_at(&self, t: f64) -> f64 {
         match self {
@@ -414,13 +414,13 @@ if(lt({p},0.5),pow(2,20*{p}-10)/2,(2-pow(2,-20*{p}+10))/2))))"
 /// What an effect compiles to. Animation reaches ffmpeg by one of three routes,
 /// picked per filter from what ffmpeg actually supports:
 ///
-///   1. **Expression** — the option accepts an expression in `t`, so ffmpeg
+///   1. **Expression** - the option accepts an expression in `t`, so ffmpeg
 ///      evaluates it per frame. Best fidelity. (eq, crop, rotate, drawtext,
 ///      volume, vignette)
-///   2. **sendcmd** — the option is flagged AV_OPT_FLAG_RUNTIME_PARAM, so the
+///   2. **sendcmd** - the option is flagged AV_OPT_FLAG_RUNTIME_PARAM, so the
 ///      curve is sampled and issued as timed commands. (gblur, hue, chromakey,
 ///      colorchannelmixer, highpass, lowpass, scale)
-///   3. **Timeline stacking** — neither of the above, but the filter supports
+///   3. **Timeline stacking** - neither of the above, but the filter supports
 ///      `enable`, so one instance per sampled slice is emitted, each active for
 ///      its own span. (unsharp, frei0r)
 #[derive(Debug, Default)]
@@ -450,7 +450,7 @@ impl Compiled {
 const MAX_SAMPLES: usize = 2400;
 
 /// Sample an animated curve at the project frame rate, so a "sampled" route
-/// lands one value per rendered frame — matching the per-frame expression
+/// lands one value per rendered frame - matching the per-frame expression
 /// route exactly, until a clip is long enough to hit MAX_SAMPLES.
 fn sample_times(dur: f64, fps: u32) -> Vec<f64> {
     let rate = (fps.max(1)) as f64;
@@ -3129,8 +3129,7 @@ pub struct Clip {
     #[serde(default)]
     pub in_point: f64,
     pub out_point: f64,
-    /// Playback rate. 2.0 is double speed, 0.5 is half. Keyframe it to ramp —
-    /// a curve here is time remapping, rendered as piecewise-constant segments.
+    /// Playback rate. 2.0 is double speed, 0.5 is half. Keyframe it to ramp - /// a curve here is time remapping, rendered as piecewise-constant segments.
     #[serde(default = "p_one")]
     pub speed: Param,
     #[serde(default)]
@@ -3601,7 +3600,7 @@ impl Project {
             for clip in &track.clips {
                 if clip.source_duration() <= 0.0 {
                     return Err(Error::Invalid(format!(
-                        "clip {} has no duration — its out point must be after its in point",
+                        "clip {} has no duration - its out point must be after its in point",
                         clip.id
                     )));
                 }
@@ -3682,7 +3681,7 @@ pub struct Frei0rPlugin {
 }
 
 /// Enumerate installed frei0r plugins. These are shared libraries on disk, so
-/// the list is whatever the machine actually has — the same source Kdenlive
+/// the list is whatever the machine actually has - the same source Kdenlive
 /// draws its effect library from.
 pub fn frei0r_plugins() -> Vec<Frei0rPlugin> {
     let mut dirs: Vec<PathBuf> = vec![
@@ -5069,7 +5068,7 @@ attack={:.1}:release={:.1}[{out}]",
 
     if final_video.is_none() && final_audio.is_none() {
         return Err(Error::Invalid(
-            "nothing to render — every track is muted or hidden".into(),
+            "nothing to render - every track is muted or hidden".into(),
         ));
     }
 
@@ -6217,8 +6216,8 @@ const MAX_INLINE_GRAPH: usize = 60_000;
 /// ffmpeg 7.0 replaced `-filter_complex_script FILE` with the general
 /// `-/optname FILE` read-this-option-from-a-file syntax and removed the old
 /// spelling outright, so neither spelling works on both sides of that break.
-/// Distributions sit on either side of it for years at a time — Ubuntu 24.04
-/// ships 6.1, where `-/filter_complex` is an unrecognised option — so the
+/// Distributions sit on either side of it for years at a time - Ubuntu 24.04
+/// ships 6.1, where `-/filter_complex` is an unrecognised option - so the
 /// binary is asked what it accepts rather than having a version string parsed
 /// out of it. One subprocess, once, since the answer cannot change under us.
 fn graph_file_option() -> &'static str {
@@ -7651,7 +7650,7 @@ pub(crate) mod tests {
         assert_eq!(
             all.len(),
             98,
-            "catalogue size changed — update the UI list too"
+            "catalogue size changed - update the UI list too"
         );
     }
 
@@ -9802,7 +9801,7 @@ mod e2e {
     #[test]
     fn renders_a_two_track_project_with_effects_and_keyframes() {
         if !ffmpeg_available() {
-            eprintln!("ffmpeg missing — skipping");
+            eprintln!("ffmpeg missing - skipping");
             return;
         }
         let a = make_media("a", 3.0);
@@ -11970,7 +11969,7 @@ mod e2e {
             .map(|o| String::from_utf8_lossy(&o.stdout).contains("frei0r"))
             .unwrap_or(false);
         if !has {
-            eprintln!("frei0r unavailable — skipping");
+            eprintln!("frei0r unavailable - skipping");
             return;
         }
         let src = make_media("f0r", 1.0);
@@ -12082,7 +12081,7 @@ mod e2e {
         let _guard = super::tests::render_lock();
         let profiles = hardware_profiles();
         if profiles.is_empty() {
-            let _ = writeln!(std::io::stderr(), "  no usable GPU encoder — skipping");
+            let _ = writeln!(std::io::stderr(), "  no usable GPU encoder - skipping");
             return;
         }
         let a = make_media("hwprofiles", 1.0);

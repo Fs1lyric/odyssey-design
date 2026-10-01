@@ -1,4 +1,4 @@
-/** Odyssey Design — application shell: library, routing and autosave. */
+/** Odyssey Design - application shell: library, routing and autosave. */
 import { api, blankItem, type Item, type Kind } from "./api";
 import { mountDocs, type Editor } from "./docs";
 import { mountSheets } from "./sheets";

@@ -100,25 +100,25 @@ ui_init
 
 trap 'exit 130' INT
 
-# Step 1 — welcome.
+# Step 1 - welcome.
 if ! ui_confirm "$APP_NAME $VERSION" \
   "<b>$APP_NAME $VERSION</b>\n\nLocal-first editor for documents, spreadsheets, decks and video.\n\nDetected system: $DISTRO_NAME\n\nThis installer will check for the libraries the application needs, install it, and add it to your applications menu." \
   "Install"; then
   exit 0
 fi
 
-# Step 2 — licence.
+# Step 2 - licence.
 if ! ui_license "$PAYLOAD/LICENSE"; then
   ui_info "$APP_NAME" "The licence was not accepted. Nothing has been installed."
   exit 0
 fi
 
-# Step 3 — where it goes. Installing for one user needs no password, so it is
+# Step 3 - where it goes. Installing for one user needs no password, so it is
 # offered first and is the default.
-SCOPE="$(ui_choose "$APP_NAME — Install for" \
+SCOPE="$(ui_choose "$APP_NAME - Install for" \
   "Choose who should be able to run $APP_NAME." \
-  "user|Just me — installs to your home directory, no password needed" \
-  "system|All users — installs to /opt, asks for your password")"
+  "user|Just me - installs to your home directory, no password needed" \
+  "system|All users - installs to /opt, asks for your password")"
 [ -n "$SCOPE" ] || exit 0
 
 if [ "$SCOPE" = "system" ]; then
@@ -145,7 +145,7 @@ if [ -e "$ODY_PREFIX/bin/$APP_ID" ]; then
   fi
 fi
 
-# Step 4 — dependencies.
+# Step 4 - dependencies.
 check_dependencies
 
 if [ "${#MISSING_REQUIRED[@]}" -gt 0 ]; then
@@ -163,7 +163,7 @@ if [ "${#MISSING_REQUIRED[@]}" -gt 0 ]; then
 
   if [ "${#PKGS[@]}" -gt 0 ]; then
     CMD="$(install_command "${PKGS[@]}")"
-    if ui_confirm "$APP_NAME — Missing dependencies" \
+    if ui_confirm "$APP_NAME - Missing dependencies" \
       "$APP_NAME needs these, and they are not installed:\n$LIST\n\nThe installer can fetch them now with your package manager:\n\n<tt>$CMD</tt>\n\nYou will be asked for your password." \
       "Install them"; then
 
@@ -187,7 +187,7 @@ if [ "${#MISSING_REQUIRED[@]}" -gt 0 ]; then
     fi
   else
     # No mapping for this package manager; tell the user what to look for.
-    if ! ui_confirm "$APP_NAME — Missing dependencies" \
+    if ! ui_confirm "$APP_NAME - Missing dependencies" \
       "$APP_NAME needs these, and this installer does not know the package names on $DISTRO_NAME:\n$LIST\n\nInstall them with your package manager, then run this installer again." \
       "Continue anyway"; then
       exit 1
@@ -195,7 +195,7 @@ if [ "${#MISSING_REQUIRED[@]}" -gt 0 ]; then
   fi
 fi
 
-# Step 5 — copy everything into place.
+# Step 5 - copy everything into place.
 if [ "$SCOPE" = "system" ] && [ "$(id -u)" -ne 0 ]; then
   if command -v pkexec >/dev/null 2>&1 && [ "$UI_MODE" = "gui" ]; then
     ESCALATE=(pkexec env
@@ -226,7 +226,7 @@ if run_with_progress "Installing $APP_NAME" install_worker; then
     *) NOTE="\n\nNote: <tt>$ODY_BINDIR</tt> is not on your PATH, so the <tt>$APP_ID</tt> command will not work in a terminal until you add it." ;;
   esac
 
-  if ui_confirm "$APP_NAME — Installed" \
+  if ui_confirm "$APP_NAME - Installed" \
     "<b>$APP_NAME $VERSION is installed.</b>\n\nIt is in your applications menu, and in a terminal as <tt>$APP_ID</tt>.\n\nTo remove it later, run:\n<tt>$ODY_PREFIX/uninstall.sh</tt>$NOTE" \
     "Launch now"; then
     setsid "$ODY_PREFIX/bin/$APP_ID" >/dev/null 2>&1 &

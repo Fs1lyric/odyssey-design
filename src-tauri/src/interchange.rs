@@ -1,4 +1,4 @@
-//! Odyssey Video — reading timelines other editors wrote.
+//! Odyssey Video - reading timelines other editors wrote.
 //!
 //! Export lives beside the renderer in `timeline.rs`; this is the other
 //! direction. Both formats are parsed into a flat list of placed clips rather
@@ -239,7 +239,7 @@ pub fn parse_edl(text: &str, fps: f64) -> Imported {
         }
         let tokens: Vec<&str> = line.split_whitespace().collect();
         if tokens.first() == Some(&"M2") {
-            // M2   REEL   050.0   01:00:00:00 — playback in frames a second.
+            // M2   REEL   050.0   01:00:00:00 - playback in frames a second.
             if let (Some(ev), Some(rate)) = (
                 events.last_mut(),
                 tokens.get(2).and_then(|v| v.parse::<f64>().ok()),

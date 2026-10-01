@@ -1,4 +1,4 @@
-/** Odyssey Video — the preview compositor.
+/** Odyssey Video - the preview compositor.
  *
  *  Draws the project at a given time onto a canvas by compositing one hidden
  *  <video> element per active clip, in track order. Each clip goes through
@@ -338,8 +338,7 @@ export class Preview {
     return this.master;
   }
 
-  /** Route one clip's element into its track's bus. Safe to call repeatedly —
-   *  createMediaElementSource may only be called once per element. */
+  /** Route one clip's element into its track's bus. Safe to call repeatedly - *  createMediaElementSource may only be called once per element. */
   private routeAudio(clip: Clip, track: Track, el: HTMLMediaElement) {
     const ctx = this.ensureAudio();
     if (!ctx) return;

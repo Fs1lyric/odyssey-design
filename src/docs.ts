@@ -1,4 +1,4 @@
-/** Odyssey Docs — a rich-text editor over contenteditable. */
+/** Odyssey Docs - a rich-text editor over contenteditable. */
 import type { Item } from "./api";
 
 export interface Editor {

@@ -1,4 +1,4 @@
-/** Odyssey Video — timeline edit operations.
+/** Odyssey Video - timeline edit operations.
  *
  *  Pure functions over the project model, kept apart from the editor so each
  *  one can be reasoned about (and exercised) without a DOM. They mutate the

@@ -8,7 +8,7 @@ and no sync.
 
 ## Status
 
-Working and testable. This is v1 of the editors, not a finished product — see
+Working and testable. This is v1 of the editors, not a finished product - see
 *Known limits* below for exactly what is and isn't there.
 
 ## The idea
@@ -27,21 +27,21 @@ Adding a module means adding a `kind`, not a new table.
 
 ## The four editors
 
-**Docs** — rich text with a formatting toolbar, ⌘/Ctrl+B/I/U, plain-text paste,
+**Docs** - rich text with a formatting toolbar, ⌘/Ctrl+B/I/U, plain-text paste,
 and live word, character and reading-time counts.
 
-**Sheets** — a 26×60 grid with a formula bar. The formula engine is Rust: a
+**Sheets** - a 26×60 grid with a formula bar. The formula engine is Rust: a
 recursive-descent parser covering arithmetic, comparisons, string concatenation,
 cell references and ranges, with `SUM PRODUCT AVERAGE MIN MAX COUNT COUNTA IF
 ROUND ABS SQRT FLOOR CEILING LEN UPPER LOWER CONCAT AND OR NOT`. Reference
 cycles are detected and reported as `#CYCLE!` rather than hanging. Errors are
 values, so one bad cell poisons only what depends on it.
 
-**Slides** — filmstrip, add/duplicate/delete/reorder, and a presenter mode
+**Slides** - filmstrip, add/duplicate/delete/reorder, and a presenter mode
 driven by arrow keys with its own dark token set so it never inherits the page
 theme.
 
-**Video** — a multi-track non-linear editor, written from scratch against
+**Video** - a multi-track non-linear editor, written from scratch against
 ffmpeg. See below.
 
 ## The video editor
@@ -64,33 +64,32 @@ is play/pause, frame step, home/end, and a scrubbable ruler. Keyboard: space to
 play, S to split at the playhead, Delete to remove, arrows to step a frame,
 shift+arrows to step a second, Ctrl+Z / Ctrl+Shift+Z to undo and redo.
 
-**Effects.** 135 native — 90 visual across colour, image, stylise, geometry,
-keying, compositing, text and repair, and 45 audio — **plus every frei0r plugin
+**Effects.** 135 native - 90 visual across colour, image, stylise, geometry,
+keying, compositing, text and repair, and 45 audio - **plus every frei0r plugin
 installed on the machine**, browsable by name from the inspector. That is the
 same plugin library Kdenlive draws on; this machine has 166, for 301 effects in
 total. Alongside them are 30 transitions and 42 blend modes. Every transition
 previews live; the thirteen blend modes a canvas has preview live and the rest
 show as exact frames when parked.
 
-**Keyframes on every numeric parameter**, with 28 interpolation curves —
-linear and hold, the ease family, and sine, cubic, quart, quint, expo, circ,
-back, elastic and bounce — set at the playhead. Animation reaches ffmpeg by
+**Keyframes on every numeric parameter**, with 28 interpolation curves - linear and hold, the ease family, and sine, cubic, quart, quint, expo, circ,
+back, elastic and bounce - set at the playhead. Animation reaches ffmpeg by
 whichever of three routes that filter actually supports, and each effect card
 says which one it used:
 
-- **per-frame** — the option takes an expression in `t`, so ffmpeg evaluates it
+- **per-frame** - the option takes an expression in `t`, so ffmpeg evaluates it
   every frame. Exact. (colour, crop, rotate, volume, text, vignette)
-- **sampled 20 Hz** — the option is a runtime parameter, so the curve is sampled
+- **sampled 20 Hz** - the option is a runtime parameter, so the curve is sampled
   and issued as timed `sendcmd` commands. (blur, hue, chroma key, opacity,
   high-pass, low-pass, transform)
-- **sampled** — the filter supports neither, but does support `enable`, so one
+- **sampled** - the filter supports neither, but does support `enable`, so one
   gated instance is emitted per slice. Coarsest. (sharpen, frei0r)
 
 **Generated sources.** Title cards and colour clips need no file on disk.
 
 **Speed, reverse and time remapping.** Speed is a curve, not a constant:
 keyframe it and the clip ramps. Ramps render as constant-speed segments, cut at
-8 per second, each with its own trim, `setpts` and staged `atempo` — so audio
+8 per second, each with its own trim, `setpts` and staged `atempo` - so audio
 follows video through a ramp, and rates beyond ffmpeg's 0.5–2.0 `atempo` limit
 still work. Speed keyframes are indexed by position in the source, so a ramp
 survives the clip being moved.
@@ -120,12 +119,12 @@ export modes: not included, burned into the picture, or a selectable track
 (`mov_text` for MP4 and MOV, WebVTT for WebM, SRT for MKV). Burned cues are
 drawn after compositing so they sit above every track.
 
-**Export.** Six profiles — H.264 (quality and draft), H.265, VP9/WebM, ProRes
+**Export.** Six profiles - H.264 (quality and draft), H.265, VP9/WebM, ProRes
 422, and audio-only MP3. "Show ffmpeg command" prints the exact invocation, so a
 render is inspectable rather than a black box.
 
 **GPU export.** Where the machine has a usable hardware encoder, H.264, H.265
-and AV1 profiles for it are added to the list — NVENC, Quick Sync, VA-API,
+and AV1 profiles for it are added to the list - NVENC, Quick Sync, VA-API,
 VideoToolbox and AMF. "Usable" is established by running each candidate, not by
 asking ffmpeg what it was compiled with: a stock ffmpeg advertises NVENC on a
 machine with no NVIDIA card, and offering that profile turns a long export into
@@ -242,7 +241,7 @@ so the three viewer states (explicit light, explicit dark, and system default)
 all render correctly. Measured contrast floor is 5.10:1 in light and 6.92:1 in
 dark, against a 4.5:1 requirement.
 
-Fonts are Adwaita Sans and JetBrains Mono — both system-installed, so nothing is
+Fonts are Adwaita Sans and JetBrains Mono - both system-installed, so nothing is
 fetched at runtime and there is no silent-fallback risk.
 
 ## Security notes
@@ -265,7 +264,7 @@ fetched at runtime and there is no silent-fallback risk.
   in `src/docs.ts` so it can be replaced without touching anything else.
 - No export to `.docx`/`.xlsx`/`.pptx` yet.
 - Formula evaluation runs only in the desktop app. In a browser, the dev store
-  shows raw cell text — there is deliberately no second engine to keep in sync.
+  shows raw cell text - there is deliberately no second engine to keep in sync.
 
 ## Documentation
 

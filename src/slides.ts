@@ -1,4 +1,4 @@
-/** Odyssey Slides — deck editing with a filmstrip and a presenter mode. */
+/** Odyssey Slides - deck editing with a filmstrip and a presenter mode. */
 import type { Item } from "./api";
 import type { Editor } from "./docs";
 

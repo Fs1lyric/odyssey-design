@@ -1,4 +1,4 @@
-/** Odyssey Video — the editor: transport, multi-track timeline, effects,
+/** Odyssey Video - the editor: transport, multi-track timeline, effects,
  *  keyframes, undo and rendering. */
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -4300,8 +4300,7 @@ export function mountVideo(
     }
   }
 
-  /** Drag to move a clip — horizontally in time, vertically between tracks —
-   *  or drag its edges to trim. */
+  /** Drag to move a clip - horizontally in time, vertically between tracks - *  or drag its edges to trim. */
   type DragMode =
     | "move" | "trim-in" | "trim-out" | "fade-in" | "fade-out"
     // Advanced trims, chosen by modifier:
@@ -5286,7 +5285,7 @@ export function mountVideo(
     presetRow.append(presetSelect, btn("Save effects as preset", () => saveEffectPreset(clip)));
     sidebar.appendChild(presetRow);
 
-    // The frei0r library — the same plugin collection Kdenlive draws on.
+    // The frei0r library - the same plugin collection Kdenlive draws on.
     const f0 = document.createElement("select");
     f0.className = "vid__fxadd";
     f0.setAttribute("aria-label", "Add a frei0r effect");
@@ -6108,7 +6107,7 @@ export function mountVideo(
 
       // A fader drag mutates the project live so the sound follows the hand,
       // which means the undo snapshot must be taken before the first mutation,
-      // not at commit time — by then the change is already in `project`.
+      // not at commit time - by then the change is already in `project`.
       let preDrag: string | null = null;
       slider.addEventListener("input", () => {
         if (preDrag === null) preDrag = JSON.stringify(saved);
@@ -6423,7 +6422,7 @@ export function mountVideo(
       dt.title = hint;
       const dd = document.createElement("dd");
       dd.dataset.r128 = key;
-      dd.textContent = "—";
+      dd.textContent = "-";
       grid.append(dt, dd);
     }
 
@@ -6457,7 +6456,7 @@ export function mountVideo(
     return JSON.stringify(renderable(project).tracks);
   }
 
-  const fmtLufs = (v: number) => (Number.isFinite(v) ? `${v.toFixed(1)} LUFS` : "—");
+  const fmtLufs = (v: number) => (Number.isFinite(v) ? `${v.toFixed(1)} LUFS` : "-");
 
   async function measureExportLoudness() {
     if (!isTauri()) { say("Measuring the export needs the desktop app.", true); return; }
@@ -6487,7 +6486,7 @@ export function mountVideo(
       const key = dd.dataset.r128 as "momentary" | "shortTerm" | "integrated" | "peak";
       const v = r ? r[key] : -Infinity;
       dd.textContent = key === "peak"
-        ? (Number.isFinite(v) ? `${v.toFixed(1)} dB` : "—")
+        ? (Number.isFinite(v) ? `${v.toFixed(1)} dB` : "-")
         : fmtLufs(v);
       // Short-term and integrated are the figures delivery specs quote.
       if (key === "integrated" || key === "shortTerm") {

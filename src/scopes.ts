@@ -1,4 +1,4 @@
-/** Odyssey Video — measurement scopes.
+/** Odyssey Video - measurement scopes.
  *
  *  All four read the preview canvas, so they measure exactly what the monitor
  *  is showing. That means they reflect the preview's approximations too: an

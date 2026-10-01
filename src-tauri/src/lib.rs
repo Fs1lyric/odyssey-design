@@ -1,4 +1,4 @@
-//! Odyssey Design — Tauri command surface.
+//! Odyssey Design - Tauri command surface.
 
 mod db;
 mod hw;
@@ -87,7 +87,7 @@ fn evaluate_sheet(cells: HashMap<String, String>) -> HashMap<String, Value> {
     s.evaluate_all()
 }
 
-/// Evaluate a single formula in the context of a sheet — used by the formula bar.
+/// Evaluate a single formula in the context of a sheet - used by the formula bar.
 #[tauri::command]
 fn evaluate_cell(cells: HashMap<String, String>, addr: String) -> Value {
     let mut s = Sheet::default();

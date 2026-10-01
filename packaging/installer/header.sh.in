@@ -1,5 +1,5 @@
 #!/bin/sh
-# Odyssey Design @VERSION@ — self-extracting installer.
+# Odyssey Design @VERSION@ - self-extracting installer.
 #
 # This file is a shell script with an xz-compressed tar archive appended to it.
 # Running it unpacks the archive into a temporary directory and starts the
@@ -56,13 +56,13 @@ OFFSET="$(awk "/^${MARKER}\$/ { print NR + 1; exit }" "$0")"
 if command -v sha256sum >/dev/null 2>&1; then
   printf 'Verifying (payload %s)...\n' "$PAYLOAD_SIZE"
   ACTUAL="$(tail -n +"$OFFSET" "$0" | sha256sum | cut -d' ' -f1)"
-  [ "$ACTUAL" = "$CHECKSUM" ] || die "checksum mismatch — this file is corrupt or incomplete.
+  [ "$ACTUAL" = "$CHECKSUM" ] || die "checksum mismatch - this file is corrupt or incomplete.
   expected $CHECKSUM
   got      $ACTUAL"
 fi
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
-  echo "Odyssey Design $VERSION — this installer is intact."
+  echo "Odyssey Design $VERSION - this installer is intact."
   exit 0
 fi
 

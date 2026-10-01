@@ -1,4 +1,4 @@
-/** Odyssey Sheets — the grid. Raw cell text lives here; evaluation is Rust's. */
+/** Odyssey Sheets - the grid. Raw cell text lives here; evaluation is Rust's. */
 import { api, type CellValue, type Item } from "./api";
 import type { Editor } from "./docs";
 

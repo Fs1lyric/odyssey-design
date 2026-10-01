@@ -7,7 +7,7 @@ import { placeImported, setMulticamAudio } from "../../src/edits";
 
 const out = document.getElementById("out")!;
 const lines: string[] = [];
-const check = (name: string, ok: boolean, detail = "") => lines.push(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
+const check = (name: string, ok: boolean, detail = "") => lines.push(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` - ${detail}` : ""}`);
 const tick = () => new Promise((r) => setTimeout(r, 30));
 const key = (k: string, extra: KeyboardEventInit = {}) =>
   document.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, ...extra }));

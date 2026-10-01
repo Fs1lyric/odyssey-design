@@ -200,7 +200,7 @@ pub fn decode_args() -> Vec<&'static str> {
 /// `ODYSSEY_VAAPI_DEVICE` wins when set, for machines with a discrete card and
 /// an integrated one where the wrong guess is the slow one. Otherwise the
 /// nodes are tried in order and the first that can actually take an upload is
-/// kept — a node existing says nothing about the user being in the `render`
+/// kept - a node existing says nothing about the user being in the `render`
 /// group or the driver being installed.
 pub fn render_node() -> Option<String> {
     probe().vaapi_device.clone()

@@ -1,4 +1,4 @@
-/** Odyssey Video — the timeline model, mirroring src-tauri/src/timeline.rs.
+/** Odyssey Video - the timeline model, mirroring src-tauri/src/timeline.rs.
  *  Rust owns rendering; this owns editing. The shapes must stay in step. */
 
 export type Easing =

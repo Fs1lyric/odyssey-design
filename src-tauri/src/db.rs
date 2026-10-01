@@ -1,10 +1,9 @@
-//! Odyssey Design — the shared document model.
+//! Odyssey Design - the shared document model.
 //!
 //! Shared with Odyssey Workspace: a document, a spreadsheet and a deck are the
 //! same shape of record seen from different angles, so they live in one table,
-//! `items`, discriminated by `kind`. The editable content is JSON in `data` —
-//! a block list for docs, a sparse cell map for sheets, a slide array for decks
-//! — while `body` holds a plain-text rendering used for search.
+//! `items`, discriminated by `kind`. The editable content is JSON in `data` - //! a block list for docs, a sparse cell map for sheets, a slide array for decks
+//! - while `body` holds a plain-text rendering used for search.
 //!
 //! `links` carries embeds: a sheet range shown inside a doc or a slide.
 
@@ -77,7 +76,7 @@ pub struct Item {
     pub title: String,
     #[serde(default)]
     pub body: String,
-    /// open | done | archived — meaningful for tasks, ignored elsewhere.
+    /// open | done | archived - meaningful for tasks, ignored elsewhere.
     #[serde(default)]
     pub status: String,
     #[serde(default)]
@@ -433,7 +432,7 @@ pub fn unlink(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Everything connected to an item, in either direction — this is what makes
+/// Everything connected to an item, in either direction - this is what makes
 /// backlinks work without a second table.
 pub fn related(conn: &Connection, id: &str) -> Result<Vec<Item>> {
     let sql = format!(

@@ -55,7 +55,7 @@ else
   say "Skipping the build, reusing the existing binary"
 fi
 
-[ -x "$BINARY" ] || die "release binary not found at $BINARY — run without --skip-build"
+[ -x "$BINARY" ] || die "release binary not found at $BINARY - run without --skip-build"
 
 # ------------------------------------------------------------------ stage ---
 

@@ -75,8 +75,7 @@ being moved.
 codebase does two of them. The monitor's shaders composite for the screen
 (below). The export path decodes and encodes on the GPU. The compositing
 *between* those two ends stays in software filters, because moving it would
-mean a second renderer written in hardware filters rather than a flag —
-`overlay_vaapi` is not `overlay`, and every effect would need a second
+mean a second renderer written in hardware filters rather than a flag - `overlay_vaapi` is not `overlay`, and every effect would need a second
 implementation with its own parity problem.
 
 **Encoders are offered only after they have run.** `ffmpeg -encoders` lists
@@ -118,7 +117,7 @@ VideoToolbox have no preset and reject the option.
 per input and per codec and falls back to software for the files the GPU does
 not know, which is what a timeline mixing camera H.264 with a VP9 screen
 recording needs. No `-hwaccel_output_format` is set, so frames come back to
-system memory for the filter graph — keeping them on the card is the second
+system memory for the filter graph - keeping them on the card is the second
 renderer again. Proxy building takes the same treatment, since it is
 decode-bound by construction: a full-resolution source in, a small picture out.
 

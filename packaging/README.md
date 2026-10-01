@@ -50,7 +50,7 @@ falling back to walking the standard library directories when there is no
 cache. `ffmpeg` and `ffprobe` are looked for on `PATH`. Anything missing is
 named, mapped to a native package, and offered for installation through
 pacman, apt, dnf, zypper or apk. Which manager is present decides the package
-names, so derivatives — Mint, Pop, EndeavourOS, Nobara, Omarchy — need no
+names, so derivatives - Mint, Pop, EndeavourOS, Nobara, Omarchy - need no
 entry of their own. If there is no mapping the wizard says what to install by
 hand rather than guessing.
 

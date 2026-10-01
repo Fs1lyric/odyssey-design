@@ -1,4 +1,4 @@
-/** Odyssey Video — a live EBU R128 / ITU-R BS.1770-4 loudness meter.
+/** Odyssey Video - a live EBU R128 / ITU-R BS.1770-4 loudness meter.
  *
  *  Taps the preview's master bus. The signal is K-weighted (a high shelf
  *  modelling the head, then a high-pass), squared and summed per channel into

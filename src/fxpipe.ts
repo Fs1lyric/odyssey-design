@@ -1,4 +1,4 @@
-/** Odyssey Video — the preview's per-clip effect pipeline.
+/** Odyssey Video - the preview's per-clip effect pipeline.
  *
  *  The renderer runs every clip through its own ffmpeg filter chain: the
  *  picture is fitted to the frame, each effect is applied in order to that

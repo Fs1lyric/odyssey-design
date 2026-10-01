@@ -134,12 +134,12 @@ check_dependencies() {
 
 describe_dep() {
   case "$1" in
-    webkit2gtk) echo "WebKitGTK 4.1 — renders the application window" ;;
-    gtk3)       echo "GTK 3 — window decoration, dialogs and theming" ;;
-    ffmpeg)     echo "ffmpeg and ffprobe — the render engine for the video editor" ;;
-    frei0r)     echo "frei0r plugins — 160+ extra video effects (optional)" ;;
-    gstlibav)   echo "gst-libav — plays H.264 in the preview without proxies (optional)" ;;
-    gstgood)    echo "gst-plugins-good — audio output in the preview (optional)" ;;
+    webkit2gtk) echo "WebKitGTK 4.1 - renders the application window" ;;
+    gtk3)       echo "GTK 3 - window decoration, dialogs and theming" ;;
+    ffmpeg)     echo "ffmpeg and ffprobe - the render engine for the video editor" ;;
+    frei0r)     echo "frei0r plugins - 160+ extra video effects (optional)" ;;
+    gstlibav)   echo "gst-libav - plays H.264 in the preview without proxies (optional)" ;;
+    gstgood)    echo "gst-plugins-good - audio output in the preview (optional)" ;;
   esac
 }
 
@@ -206,11 +206,11 @@ ui_license() { # path
   [ -r "$1" ] || return 0
   case "$UI_MODE:$UI_TOOL" in
     gui:zenity)
-      zenity --text-info --title="$APP_NAME — Licence" --filename="$1" \
+      zenity --text-info --title="$APP_NAME - Licence" --filename="$1" \
              --width=640 --height=460 --checkbox="I accept the terms of the MIT licence" \
              2>/dev/null ;;
     gui:kdialog)
-      kdialog --title "$APP_NAME — Licence" --textbox "$1" 600 400 2>/dev/null
+      kdialog --title "$APP_NAME - Licence" --textbox "$1" 600 400 2>/dev/null
       kdialog --yesno "Do you accept the terms of the MIT licence?" 2>/dev/null ;;
     *)
       printf '\n--- Licence ---\n'; cat "$1"; printf -- '---------------\n'

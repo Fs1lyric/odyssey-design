@@ -3,7 +3,7 @@
  *  Odyssey runs as a desktop app; its data lives in SQLite behind Tauri. But
  *  iterating on layout in a browser is much faster than rebuilding the binary,
  *  so when the Tauri bridge is absent we fall back to localStorage. This is a
- *  development affordance only — inside the packaged app it is never reached,
+ *  development affordance only - inside the packaged app it is never reached,
  *  because `isTauri()` is true there.
  *
  *  Formula evaluation deliberately has NO browser implementation: the engine

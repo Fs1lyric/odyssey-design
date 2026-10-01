@@ -1,4 +1,4 @@
-//! Odyssey Design — the spreadsheet formula engine.
+//! Odyssey Design - the spreadsheet formula engine.
 //!
 //! A recursive-descent parser over a small expression grammar, evaluated
 //! against a sparse cell map. Deliberately not a Excel-compatibility project:

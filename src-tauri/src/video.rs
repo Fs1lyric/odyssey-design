@@ -1,4 +1,4 @@
-//! Odyssey Video — media inspection.
+//! Odyssey Video - media inspection.
 //!
 //! Probing and thumbnailing for source files. The timeline model and the
 //! renderer live in `timeline.rs`; this module only answers questions about
